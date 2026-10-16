@@ -525,6 +525,20 @@ Regra obrigatória de qualidade: toda mudança deve criar ou atualizar teste uni
 
 Quando o agente terminar essa análise, você poderá enviar a tarefa da fundação ou entregar o módulo a um bot específico.
 
+---
+
+## Parte 17 — Trabalhar em modo piloto automático
+
+Se você quiser que o agente faça praticamente todo o trabalho, use o documento `docs/24-modo-autonomo-orquestrador.md`. Ele contém o prompt do agente orquestrador. Esse agente pode planejar, criar branches, implementar módulos, criar testes, corrigir erros, atualizar documentação e preparar Pull Requests.
+
+Cole o prompt do orquestrador e depois envie:
+
+```text
+Execute o backlog do MVP em modo piloto automático. Comece pela fundação de empresas, módulos ativos, usuários, permissões e auditoria. Trabalhe em branches próprias, crie testes unitários e de integração para toda mudança, crie testes de regressão para todo bug e prepare Pull Requests. Não publique em produção, não use dados reais e pare apenas nos gates críticos definidos na documentação.
+```
+
+O agente não deve pedir confirmação para cada linha de código. Ele deve seguir sozinho quando a ação for reversível e segura. Porém, você ainda deve revisar Pull Requests e aprovar qualquer ação que envolva produção, credenciais, dados reais, exclusão, custos ou regras fiscais/trabalhistas.
+
 ## Referências oficiais
 
 [1]: https://cursor.com/download "Download oficial do Cursor"

@@ -38,6 +38,7 @@ Esta pasta contém a documentação de produto, domínio, UX, arquitetura e enge
 | `21-github-actions-e-cicd.md` | Pipeline de CI/CD, secrets, migrations e rollback. |
 | `22-prompt-start-grok-cursor.md` | Prompt de inicialização do projeto para cada agente. |
 | `23-prompt-agente-modulo.md` | Prompt de execução por módulo com contrato de entrega. |
+| `24-modo-autonomo-orquestrador.md` | Prompt para operar em piloto automático com gates de segurança. |
 | `ARCHITECTURE.md` | Diagramas Mermaid, fluxo de dados e limites de módulos. |
 | `WORKFLOWS.md` | Playbooks para features, endpoints, migrations e integrações. |
 | `TESTING.md` | Ferramentas, convenções, fixtures e cenários de teste. |
