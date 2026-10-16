@@ -8,7 +8,7 @@ A Wamovale mantém seu site institucional público e oferece uma entrada para o 
 
 ```text
 www.wamovale.com.br
-  └── botão “Acessar ERP”
+  └── botão “Área do colaborador”
         ↓
 erp.wamovale.com.br
   └── login com e-mail corporativo + senha
@@ -48,7 +48,7 @@ Destino: <host fornecido pela hospedagem do ERP>
 TTL: padrão
 ```
 
-O site institucional não precisa ser migrado para a hospedagem do ERP. O botão “Acessar ERP” deve apontar para o subdomínio.
+O site institucional não precisa ser migrado para a hospedagem do ERP. O botão “Área do colaborador” deve apontar para o subdomínio.
 
 ## Login versus apontamento
 
