@@ -16,6 +16,8 @@ import {
   Factory,
   Gauge,
   LayoutDashboard,
+  LockKeyhole,
+  LogIn,
   Menu,
   MoreHorizontal,
   PackageCheck,
@@ -42,6 +44,7 @@ type NavItem = {
   href: string;
   icon: IconType;
   section?: string;
+  restricted?: boolean;
 };
 
 const navItems: NavItem[] = [
@@ -51,8 +54,8 @@ const navItems: NavItem[] = [
   { label: "Estoque", href: "/estoque", icon: Boxes },
   { label: "Manutenção", href: "/manutencao", icon: Wrench },
   { label: "Ordens", href: "/ordens", icon: ClipboardList, section: "Gestão" },
-  { label: "Financeiro", href: "/financeiro", icon: WalletCards },
-  { label: "Configurações", href: "/configuracoes", icon: Settings2, section: "Sistema" },
+  { label: "Financeiro", href: "/financeiro", icon: WalletCards, restricted: true },
+  { label: "Configurações", href: "/configuracoes", icon: Settings2, section: "Sistema", restricted: true },
 ];
 
 const pageCopy: Record<string, { eyebrow: string; title: string; description: string }> = {
@@ -243,13 +246,13 @@ function MetricCard({ label, value, change, trend, tone, icon: Icon, note }: (ty
   );
 }
 
-function PageHeader({ current, onNewOrder }: { current: NavItem; onNewOrder: () => void }) {
+function PageHeader({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
   const isDashboard = current.href === "/";
   return (
     <div className="page-header">
       <div>
         <div className="eyebrow">{isDashboard ? "Quinta-feira, 16 de outubro de 2026" : pageCopy[current.href]?.eyebrow}</div>
-        <h1>{isDashboard ? <>Bom dia, Marina <span className="heading-accent">↗</span></> : pageCopy[current.href]?.title}</h1>
+        <h1>{isDashboard ? <>Bom dia, {isLogged ? userName : "equipe"} <span className="heading-accent">↗</span></> : pageCopy[current.href]?.title}</h1>
         <p>{isDashboard ? "A fábrica está no ritmo. Veja o que merece sua atenção agora." : pageCopy[current.href]?.description}</p>
       </div>
       <div className="header-actions">
@@ -319,20 +322,20 @@ function AlertsPanel() {
   );
 }
 
-function Dashboard({ onNewOrder }: { onNewOrder: () => void }) {
+function Dashboard({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
   return <>
-    <PageHeader current={navItems[0]} onNewOrder={onNewOrder} />
+    <PageHeader current={navItems[0]} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />
     <div className="metrics-grid">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div>
     <div className="dashboard-grid dashboard-grid--top"><ProductionPulse /><FactoryStatus /></div>
     <div className="dashboard-grid dashboard-grid--bottom"><OrdersPanel /><AlertsPanel /></div>
   </>;
 }
 
-function ModulePage({ current, onNewOrder }: { current: NavItem; onNewOrder: () => void }) {
+function ModulePage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
   const data = moduleData[current.href];
-  if (!data) return <SettingsPage current={current} onNewOrder={onNewOrder} />;
+  if (!data) return <SettingsPage current={current} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />;
   return <>
-    <PageHeader current={current} onNewOrder={onNewOrder} />
+    <PageHeader current={current} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />
     <div className="metrics-grid">{data.metrics.map((metric) => <article className="metric-card" key={metric.label}><div className="metric-card__top"><span className="metric-label">{metric.label}</span><span className="metric-signal" style={{ background: toneStyles[metric.tone].background, color: toneStyles[metric.tone].color }}><Sparkles size={15} /></span></div><div className="metric-value">{metric.value}</div><div className="metric-foot"><span className="metric-note metric-note--strong" style={{ color: toneStyles[metric.tone].color }}>{metric.note}</span></div></article>)}</div>
     <section className="panel module-panel">
       <div className="panel-heading"><div><span className="panel-kicker">Visão detalhada</span><h2>{current.label} em foco</h2></div><div className="table-actions"><button className="button button--secondary button--compact"><Search size={15} /> Buscar</button><button className="button button--secondary button--compact"><SlidersIcon /> Filtros</button></div></div>
@@ -342,27 +345,44 @@ function ModulePage({ current, onNewOrder }: { current: NavItem; onNewOrder: () 
   </>;
 }
 
-function SettingsPage({ current, onNewOrder }: { current: NavItem; onNewOrder: () => void }) {
+function RestrictedPage({ current, onNewOrder, onLogin }: { current: NavItem; onNewOrder: () => void; onLogin: () => void }) {
+  return <><PageHeader current={current} onNewOrder={onNewOrder} isLogged={false} /><section className="restricted-panel"><div className="restricted-panel__icon"><LockKeyhole size={25} /></div><span className="eyebrow">Módulo protegido</span><h2>Acesso autorizado necessário</h2><p>O conteúdo de <b>{current.label}</b> é reservado para pessoas com permissão neste setor. Faça login para validar seu perfil e manter a rastreabilidade das consultas e ações.</p><button className="button button--primary" onClick={onLogin}><LogIn size={16} /> Entrar para acessar</button><div className="restricted-panel__note"><ShieldCheck size={15} /> Acesso público continua disponível para Dashboard, Produção, Qualidade, Estoque, Manutenção e Ordens.</div></section></>;
+}
+
+function SettingsPage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
   const cards = [
     { title: "Dados mestres", description: "Produtos, moldes, injetoras, clientes e fornecedores.", icon: DatabaseIcon, tone: "teal" as Tone, action: "Gerenciar cadastros" },
     { title: "Usuários e permissões", description: "Papéis, acessos por módulo e trilha de auditoria.", icon: UserRound, tone: "blue" as Tone, action: "Ver usuários" },
     { title: "Integrações", description: "Balanças, EDI, fiscal, IoT e notificações.", icon: PlugIcon, tone: "orange" as Tone, action: "Conectar serviço" },
     { title: "Regras de qualidade", description: "Barreiras, amostragens, laudos e quarentena.", icon: ShieldCheck, tone: "lime" as Tone, action: "Editar regras" },
   ];
-  return <><PageHeader current={current} onNewOrder={onNewOrder} /><section className="settings-grid">{cards.map((card) => { const style = toneStyles[card.tone]; return <article className="settings-card" key={card.title}><span className="settings-icon" style={{ color: style.color, background: style.background }}><card.icon size={19} /></span><h2>{card.title}</h2><p>{card.description}</p><button className="panel-link panel-link--button">{card.action}<ChevronRight size={15} /></button></article>; })}</section><section className="panel system-health"><div className="panel-heading"><div><span className="panel-kicker">Monitoramento</span><h2>Saúde do sistema</h2></div><StatusPill label="Tudo operando" tone="teal" /></div><div className="health-grid"><div><span>API e integrações</span><b>99,98%</b><small>últimos 30 dias</small></div><div><span>Eventos de chão de fábrica</span><b>2.840/min</b><small>processamento normal</small></div><div><span>Último backup</span><b>Hoje, 03:00</b><small>retido por 90 dias</small></div></div></section></>;
+  return <><PageHeader current={current} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} /><section className="settings-grid">{cards.map((card) => { const style = toneStyles[card.tone]; return <article className="settings-card" key={card.title}><span className="settings-icon" style={{ color: style.color, background: style.background }}><card.icon size={19} /></span><h2>{card.title}</h2><p>{card.description}</p><button className="panel-link panel-link--button">{card.action}<ChevronRight size={15} /></button></article>; })}</section><section className="panel system-health"><div className="panel-heading"><div><span className="panel-kicker">Monitoramento</span><h2>Saúde do sistema</h2></div><StatusPill label="Tudo operando" tone="teal" /></div><div className="health-grid"><div><span>API e integrações</span><b>99,98%</b><small>últimos 30 dias</small></div><div><span>Eventos de chão de fábrica</span><b>2.840/min</b><small>processamento normal</small></div><div><span>Último backup</span><b>Hoje, 03:00</b><small>retido por 90 dias</small></div></div></section></>;
 }
 
 function SlidersIcon() { return <span className="sliders-icon"><span /><span /><span /></span>; }
 function DatabaseIcon({ size = 19 }: { size?: number }) { return <span className="database-icon" style={{ width: size, height: size }}><span /></span>; }
 function PlugIcon({ size = 19 }: { size?: number }) { return <span className="plug-icon" style={{ width: size, height: size }}>↗</span>; }
 
+function AccessModal({ mode, isLogged, userName, onClose, onLogin, onAction }: { mode: "login" | "record"; isLogged: boolean; userName?: string; onClose: () => void; onLogin: (name: string, record: string) => void; onAction: (record: string) => void }) {
+  const [name, setName] = useState("");
+  const [record, setRecord] = useState("");
+  const isLogin = mode === "login";
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="access-modal"><button className="modal-close" onClick={onClose}><X size={18} /></button><div className="access-modal__icon"><ShieldCheck size={21} /></div><span className="eyebrow">Rastreabilidade obrigatória</span><h2>{isLogin ? "Entre para operar" : "Confirme seu registro"}</h2><p>{isLogin ? "O acesso público permite consultar a operação. Para apontar ou alterar qualquer dado, identifique-se." : `Toda ação fica vinculada ao registro de quem realizou. ${userName ? `Operador: ${userName}.` : ""}`}</p>{isLogin && <label className="modal-field"><span>Nome completo</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: João da Silva" /></label>}<label className="modal-field"><span>Número de registro</span><input value={record} onChange={(event) => setRecord(event.target.value)} placeholder="Ex.: REG-00482" /></label><div className="modal-hint"><LockKeyhole size={14} /> O registro será salvo no histórico da ação.</div><button className="button button--primary modal-submit" disabled={(isLogin && !name.trim()) || !record.trim()} onClick={() => isLogin ? onLogin(name.trim(), record.trim()) : onAction(record.trim())}>{isLogin ? "Entrar e continuar" : "Confirmar apontamento"}<ChevronRight size={16} /></button><button className="modal-cancel" onClick={onClose}>Cancelar</button></div></div>;
+}
+
 export default function Home() {
   const [location, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [isLogged, setIsLogged] = useState(false);
+  const [user, setUser] = useState<{ name: string; record: string } | null>(null);
+  const [accessModal, setAccessModal] = useState<"login" | "record" | null>(null);
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
 
-  const handleNewOrder = () => toast.success("Nova ordem pronta para configurar", { description: "Escolha produto, molde e janela de produção para começar." });
+  const handleNewOrder = () => setAccessModal("record");
+  const handleLogin = (name: string, record: string) => { setUser({ name, record }); setIsLogged(true); setAccessModal(null); toast.success(`Bem-vindo, ${name}`, { description: `Registro ${record} vinculado à sua sessão.` }); };
+  const handleAction = (record: string) => { setUser((currentUser) => currentUser ? { ...currentUser, record } : currentUser); setAccessModal(null); toast.success("Apontamento autorizado", { description: `Ação registrada por ${user?.name ?? "operador identificado"} · ${record}.` }); };
+  const handleRestrictedNavigation = (item: NavItem) => { if (item.restricted && !isLogged) { toast.info("Acesso autorizado necessário", { description: `Entre para acessar ${item.label} e manter a rastreabilidade.` }); setAccessModal("login"); return; } navigate(item.href); setMobileOpen(false); };
   const handleNotification = () => toast("Você está em dia", { description: "Não há novas notificações além dos 3 alertas operacionais." });
   const handleSearch = (event: React.FormEvent) => { event.preventDefault(); if (search.trim()) toast.info(`Busca por “${search.trim()}”`, { description: "A busca global será conectada aos dados reais na próxima etapa." }); };
 
@@ -370,15 +390,16 @@ export default function Home() {
     <aside className={`sidebar ${mobileOpen ? "sidebar--open" : ""}`}>
       <div className="brand"><span className="brand-mark"><span>IF</span></span><span className="brand-name">injeta<span>flow</span></span><span className="brand-badge">ERP</span><button className="mobile-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div>
       <div className="workspace-switcher"><span className="workspace-avatar">FP</span><span><small>Unidade ativa</small><b>Fábrica Paulista</b></span><ChevronDown size={15} /></div>
-      <nav className="sidebar-nav">{navItems.map((item, index) => <div key={item.href}>{item.section && <span className="nav-section">{item.section}</span>}<button className={`nav-item ${current.href === item.href ? "nav-item--active" : ""}`} onClick={() => { navigate(item.href); setMobileOpen(false); }}><item.icon size={18} strokeWidth={current.href === item.href ? 2.4 : 1.9} /><span>{item.label}</span>{item.label === "Qualidade" && <span className="nav-alert">3</span>}</button></div>)}</nav>
-      <div className="sidebar-bottom"><div className="help-card"><span className="help-spark"><Sparkles size={16} /></span><div><b>Precisa de ajuda?</b><small>Fale com seu especialista</small></div><ChevronRight size={15} /></div><button className="user-card"><span className="user-avatar">MC</span><span><b>Marina Costa</b><small>Admin da unidade</small></span><MoreHorizontal size={17} /></button></div>
+      <nav className="sidebar-nav">{navItems.map((item) => <div key={item.href}>{item.section && <span className="nav-section">{item.section}</span>}<button className={`nav-item ${current.href === item.href ? "nav-item--active" : ""} ${item.restricted ? "nav-item--restricted" : ""}`} onClick={() => handleRestrictedNavigation(item)}><item.icon size={18} strokeWidth={current.href === item.href ? 2.4 : 1.9} /><span>{item.label}</span>{item.restricted && <LockKeyhole size={13} className="nav-lock" />}{item.label === "Qualidade" && <span className="nav-alert">3</span>}</button></div>)}</nav>
+      <div className="sidebar-bottom"><div className="help-card"><span className="help-spark"><Sparkles size={16} /></span><div><b>Precisa de ajuda?</b><small>Fale com seu especialista</small></div><ChevronRight size={15} /></div>{isLogged ? <button className="user-card"><span className="user-avatar">{user?.name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span><b>{user?.name}</b><small>Registro {user?.record}</small></span><MoreHorizontal size={17} /></button> : <button className="public-user-card" onClick={() => setAccessModal("login")}><span className="public-user-icon"><UserRound size={15} /></span><span><b>Acesso público</b><small>Entrar para operar</small></span><LogIn size={15} /></button>}</div>
     </aside>
     {mobileOpen && <button className="sidebar-overlay" aria-label="Fechar menu" onClick={() => setMobileOpen(false)} />}
     <main className="main-content">
-      <header className="topbar"><button className="mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><form className="global-search" onSubmit={handleSearch}><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ordens, lotes, produtos..." /><kbd>⌘ K</kbd></form><div className="topbar-actions"><div className="topbar-date"><CalendarClock size={16} /><span>16 out. 2026</span><ChevronDown size={14} /></div><button className="topbar-icon" onClick={handleNotification}><span className="notification-dot" /><BellIcon /></button><div className="topbar-avatar">MC</div></div></header>
-      <div className="page-content">{current.href === "/" ? <Dashboard onNewOrder={handleNewOrder} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} /> : <ModulePage current={current} onNewOrder={handleNewOrder} />}</div>
+      <header className="topbar"><button className="mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><form className="global-search" onSubmit={handleSearch}><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ordens, lotes, produtos..." /><kbd>⌘ K</kbd></form><div className="topbar-actions"><span className={`access-mode ${isLogged ? "access-mode--logged" : ""}`}><span className="access-mode__dot" />{isLogged ? `Registro ${user?.record}` : "Acesso público"}</span><div className="topbar-date"><CalendarClock size={16} /><span>16 out. 2026</span><ChevronDown size={14} /></div><button className="topbar-icon" onClick={handleNotification}><span className="notification-dot" /><BellIcon /></button>{isLogged ? <div className="topbar-avatar">{user?.name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div> : <button className="login-button" onClick={() => setAccessModal("login")}><LogIn size={14} /> Entrar</button>}</div></header>
+      <div className="page-content">{current.href === "/" ? <Dashboard onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.restricted && !isLogged ? <RestrictedPage current={current} onNewOrder={handleNewOrder} onLogin={() => setAccessModal("login")} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : <ModulePage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} />}</div>
       <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b></span></footer>
     </main>
+    {accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
   </div>;
 }
 

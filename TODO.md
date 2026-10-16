@@ -4,6 +4,13 @@
 - [x] Criar uma shell moderna com sidebar, marca InjetaFlow, busca global, seletor de unidade, notificações, avatar e navegação responsiva.
 - [x] Disponibilizar rotas navegáveis para Dashboard, Produção, Qualidade, Estoque, Manutenção, Ordens, Financeiro e Configurações.
 - [x] Exibir estado ativo da navegação e manter a hierarquia visual coerente entre módulos.
+- [x] Permitir consulta pública do painel, sinalizar módulos restritos com cadeado e abrir login ao tentar acessá-los.
+
+## Identidade e rastreabilidade
+- [x] Exibir “Bom dia, equipe” para visitantes públicos e personalizar a saudação após login com o nome do usuário.
+- [x] Solicitar nome e número de registro no login para identificar o operador da sessão.
+- [x] Solicitar/confirmar número de registro antes de qualquer apontamento, criação ou alteração, deixando explícito que a ação será gravada no histórico.
+- [ ] Conectar autenticação real, papéis, permissões por setor e trilha de auditoria ao backend.
 
 ## Dashboard operacional
 - [x] Exibir KPIs de OEE, produção do dia, refugo e ordens em andamento com variação percentual.
@@ -23,4 +30,4 @@
 - [x] Aplicar direção visual industrial neo-utility com teal elétrico, status semânticos, tipografia Inter e responsividade.
 - [x] Criar manifesto `manus-routes.json` sincronizado com as rotas implementadas.
 - [ ] Conectar os componentes a banco de dados e APIs reais em uma próxima etapa.
-- [ ] Adicionar autenticação, permissões por papel e auditoria em uma próxima etapa.
+- [ ] Adicionar autenticação, permissões por papel e auditoria persistida em uma próxima etapa.
