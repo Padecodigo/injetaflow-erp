@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { authenticateDemoUser, isDemoAdmin } from "@/lib/demo-auth";
 import {
   Activity,
   ArrowLeft,
@@ -540,7 +541,7 @@ export default function Home() {
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
 
   const handleNewOrder = () => setAccessModal("record");
-  const handleLogin = (email: string, password: string) => { const normalizedEmail = email.toLowerCase(); if (normalizedEmail === "admin@wamovale.com.br" && password !== "adm123") { toast.error("Senha administrativa inválida", { description: "Confira a credencial de demonstração e tente novamente." }); return; } const isAdmin = normalizedEmail === "admin@wamovale.com.br" && password === "adm123"; const name = isAdmin ? "Administrador Wamovale" : normalizedEmail.includes("ana") ? "Ana Paula Souza" : "Mariana Costa"; setUser({ name, record: isAdmin ? "ADM-00001" : name === "Ana Paula Souza" ? "REG-00027" : "REG-00041", role: isAdmin ? "admin" : "collaborator" }); setIsLogged(true); setAccessModal(null); toast.success(`Sessão autenticada`, { description: isAdmin ? "Administrador Wamovale · acesso total liberado." : `${name} · sua área pessoal foi liberada.` }); };
+  const handleLogin = (email: string, password: string) => { const session = authenticateDemoUser(email, password); if (!session) { toast.error(isDemoAdmin(email) ? "Senha administrativa inválida" : "Usuário ou senha inválidos", { description: "Use uma credencial demonstrativa autorizada para este protótipo." }); return; } setUser(session); setIsLogged(true); setAccessModal(null); toast.success(`Sessão autenticada`, { description: session.role === "admin" ? "Administrador Wamovale · acesso total liberado." : `${session.name} · sua área pessoal foi liberada.` }); };
   const handleAction = (record: string) => { setUser((currentUser) => currentUser ? { ...currentUser, record } : currentUser); setAccessModal(null); toast.success("Apontamento autorizado", { description: `Ação registrada por ${user?.name ?? "operador identificado"} · ${record}.` }); };
   const handleRestrictedNavigation = (item: NavItem) => { if (item.restricted && !isLogged) { toast.info("Acesso autorizado necessário", { description: `Entre para acessar ${item.label} e manter a rastreabilidade.` }); setAccessModal("login"); return; } navigate(item.href); setMobileOpen(false); };
   const handleNotification = () => toast("Você está em dia", { description: "Não há novas notificações além dos 3 alertas operacionais." });
