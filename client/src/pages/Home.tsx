@@ -7,10 +7,12 @@ import {
   ArrowUpRight,
   Boxes,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleHelp,
+  Clock3,
   ClipboardList,
   Download,
   Factory,
@@ -30,6 +32,9 @@ import {
   TimerReset,
   TrendingUp,
   UserRound,
+  UserPlus,
+  Users,
+  MapPin,
   WalletCards,
   Wrench,
   X,
@@ -53,8 +58,10 @@ const navItems: NavItem[] = [
   { label: "Qualidade", href: "/qualidade", icon: ShieldCheck },
   { label: "Estoque", href: "/estoque", icon: Boxes },
   { label: "Manutenção", href: "/manutencao", icon: Wrench },
+  { label: "RH & ponto", href: "/rh", icon: Users, section: "Pessoas", restricted: true },
   { label: "Ordens", href: "/ordens", icon: ClipboardList, section: "Gestão" },
   { label: "Financeiro", href: "/financeiro", icon: WalletCards, restricted: true },
+  { label: "Usuários e acessos", href: "/usuarios", icon: UserRound, section: "Sistema", restricted: true },
   { label: "Configurações", href: "/configuracoes", icon: Settings2, section: "Sistema", restricted: true },
 ];
 
@@ -79,6 +86,11 @@ const pageCopy: Record<string, { eyebrow: string; title: string; description: st
     title: "Manutenção",
     description: "Antecipe desgaste de moldes e periféricos antes que a fábrica sinta o impacto.",
   },
+  "/rh": {
+    eyebrow: "Pessoas em movimento",
+    title: "RH & ponto",
+    description: "Acompanhe presença, jornadas, atrasos e registros de ponto com rastreabilidade por colaborador.",
+  },
   "/ordens": {
     eyebrow: "Planejamento conectado",
     title: "Ordens de produção",
@@ -93,6 +105,11 @@ const pageCopy: Record<string, { eyebrow: string; title: string; description: st
     eyebrow: "Seu jeito de operar",
     title: "Configurações",
     description: "Conecte dados mestres, regras e integrações sem deixar a operação esperando.",
+  },
+  "/usuarios": {
+    eyebrow: "Governança de acesso",
+    title: "Usuários e acessos",
+    description: "Cadastre pessoas e escolha exatamente quais módulos, ações e níveis de acesso cada uma pode utilizar.",
   },
 };
 
@@ -349,6 +366,38 @@ function RestrictedPage({ current, onNewOrder, onLogin }: { current: NavItem; on
   return <><PageHeader current={current} onNewOrder={onNewOrder} isLogged={false} /><section className="restricted-panel"><div className="restricted-panel__icon"><LockKeyhole size={25} /></div><span className="eyebrow">Módulo protegido</span><h2>Acesso autorizado necessário</h2><p>O conteúdo de <b>{current.label}</b> é reservado para pessoas com permissão neste setor. Faça login para validar seu perfil e manter a rastreabilidade das consultas e ações.</p><button className="button button--primary" onClick={onLogin}><LogIn size={16} /> Entrar para acessar</button><div className="restricted-panel__note"><ShieldCheck size={15} /> Acesso público continua disponível para Dashboard, Produção, Qualidade, Estoque, Manutenção e Ordens.</div></section></>;
 }
 
+function RhPage({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+  const people = [
+    ["Mariana Costa", "Operadora · Linha 01", "06:58", "No posto", "teal" as Tone],
+    ["Rafael Mendes", "Preparador · Linha 02", "07:04", "No posto", "teal" as Tone],
+    ["Camila Rocha", "Qualidade", "08:12", "Atraso 12 min", "orange" as Tone],
+    ["João Vieira", "Manutenção", "—", "Falta justificada", "blue" as Tone],
+  ];
+  return <>
+    <PageHeader current={navItems.find((item) => item.href === "/rh") ?? navItems[0]} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />
+    <div className="metrics-grid rh-metrics">
+      {[{ label: "Presentes agora", value: "86", note: "de 94 escalados", tone: "teal" as Tone, icon: Users }, { label: "Pontos registrados", value: "91,5%", note: "hoje · 06:00–09:00", tone: "blue" as Tone, icon: Clock3 }, { label: "Atrasos", value: "07", note: "2 acima de 15 min", tone: "orange" as Tone, icon: CalendarDays }, { label: "Ausências", value: "08", note: "3 aguardando justificativa", tone: "red" as Tone, icon: MapPin }].map((metric) => <article className="metric-card" key={metric.label}><div className="metric-card__top"><span className="metric-label">{metric.label}</span><span className="metric-signal" style={{ color: toneStyles[metric.tone].color, background: toneStyles[metric.tone].background }}><metric.icon size={16} /></span></div><div className="metric-value">{metric.value}</div><div className="metric-foot"><span className="metric-note metric-note--strong" style={{ color: toneStyles[metric.tone].color }}>{metric.note}</span></div></article>)}
+    </div>
+    <div className="rh-grid">
+      <section className="panel rh-presence-panel"><div className="panel-heading"><div><span className="panel-kicker">Tempo real</span><h2>Quem está na fábrica</h2></div><button className="button button--secondary button--compact"><Download size={14} /> Exportar</button></div><div className="presence-summary"><div><b>86</b><span>presentes</span></div><div><b>08</b><span>ausentes</span></div><div><b>04</b><span>em intervalo</span></div></div><div className="presence-list">{people.map(([name, role, time, state, tone]) => <div className="presence-row" key={name}><span className="presence-avatar">{name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span><div className="presence-person"><b>{name}</b><small>{role}</small></div><span className="presence-time">{time}</span><StatusPill label={state} tone={tone as Tone} /></div>)}</div><button className="panel-link panel-link--button">Ver quadro completo <ChevronRight size={15} /></button></section>
+      <section className="panel rh-shifts-panel"><div className="panel-heading"><div><span className="panel-kicker">Escalas de hoje</span><h2>Distribuição por turno</h2></div><button className="icon-button"><MoreHorizontal size={18} /></button></div><div className="shift-list"><div className="shift-row"><span className="shift-badge shift-badge--teal">1º</span><div><b>06:00 — 14:00</b><small>Produção e qualidade</small></div><strong>42 / 44</strong></div><div className="shift-row"><span className="shift-badge shift-badge--orange">2º</span><div><b>14:00 — 22:00</b><small>Produção e manutenção</small></div><strong>38 / 40</strong></div><div className="shift-row"><span className="shift-badge shift-badge--blue">3º</span><div><b>22:00 — 06:00</b><small>Operação reduzida</small></div><strong>06 / 10</strong></div></div><div className="rh-location-note"><MapPin size={14} /><span>82 registros validados por GPS ou rede local</span></div></section>
+    </div>
+    <section className="panel rh-report-panel"><div className="panel-heading"><div><span className="panel-kicker">Relatório de ponto</span><h2>Batidas e ocorrências de hoje</h2></div><div className="table-actions"><button className="button button--secondary button--compact"><CalendarDays size={14} /> 16 out. 2026</button><button className="button button--primary button--compact"><Download size={14} /> Baixar relatório</button></div></div><div className="module-table-wrap"><table className="module-table rh-table"><thead><tr><th>Colaborador</th><th>Entrada</th><th>Intervalo</th><th>Saída prevista</th><th>Origem</th><th>Situação</th><th /></tr></thead><tbody>{[["Mariana Costa", "06:58", "11:58", "14:00", "Rede local", "Regular", "teal"], ["Rafael Mendes", "07:04", "12:01", "14:00", "GPS validado", "Regular", "teal"], ["Camila Rocha", "08:12", "—", "17:00", "GPS validado", "Atraso", "orange"], ["João Vieira", "—", "—", "17:00", "Justificativa", "Ausência", "blue"]].map((row) => <tr key={row[0]}>{row.slice(0, 5).map((cell, index) => <td key={cell} className={index === 0 ? "module-primary" : index === 4 ? "muted-cell" : ""}>{cell}</td>)}<td><StatusPill label={row[5]} tone={row[6] as Tone} /></td><td><button className="row-more"><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></div></section>
+  </>;
+}
+
+function UsersAccessPage({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+  const [role, setRole] = useState("Supervisor de produção");
+  const [selectedModules, setSelectedModules] = useState(["Produção", "Qualidade", "Estoque"]);
+  const modules = ["Dashboard", "Produção", "Qualidade", "Estoque", "Manutenção", "RH & ponto", "Financeiro", "Fiscal e contábil", "Documentos"];
+  const toggleModule = (module: string) => setSelectedModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module]);
+  return <>
+    <PageHeader current={navItems.find((item) => item.href === "/usuarios") ?? navItems[0]} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />
+    <div className="access-layout"><section className="panel user-form-panel"><div className="panel-heading"><div><span className="panel-kicker">Novo cadastro</span><h2>Adicionar usuário</h2></div><span className="settings-icon settings-icon--small"><UserPlus size={17} /></span></div><div className="form-grid"><label className="modal-field"><span>Nome completo</span><input placeholder="Ex.: Ana Paula Souza" /></label><label className="modal-field"><span>E-mail corporativo</span><input placeholder="ana@empresa.com.br" /></label><label className="modal-field"><span>Número de registro</span><input placeholder="REG-00000" /></label><label className="modal-field"><span>Setor</span><select defaultValue="Produção"><option>Produção</option><option>Qualidade</option><option>RH</option><option>Manutenção</option><option>Financeiro</option></select></label></div><div className="access-section"><div className="access-section__heading"><div><span className="panel-kicker">Nível de acesso</span><b>Escolha o papel principal</b></div><select value={role} onChange={(event) => setRole(event.target.value)}><option>Administrador</option><option>Supervisor de produção</option><option>Operador</option><option>Qualidade</option><option>Consulta</option></select></div><p>O papel sugere permissões iniciais, mas você pode ajustar módulo por módulo abaixo.</p></div><div className="access-section"><div className="access-section__heading"><div><span className="panel-kicker">Permissões por módulo</span><b>O que esta pessoa poderá acessar?</b></div><span className="selection-count">{selectedModules.length} selecionados</span></div><div className="module-check-grid">{modules.map((module) => <label className={`module-check ${selectedModules.includes(module) ? "module-check--selected" : ""}`} key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span className="check-box">{selectedModules.includes(module) ? "✓" : ""}</span><span>{module}</span></label>)}</div></div><div className="user-form-actions"><button className="button button--secondary">Cancelar</button><button className="button button--primary" onClick={() => toast.success("Usuário pronto para cadastro", { description: `${role} · ${selectedModules.length} módulos selecionados.` })}><UserPlus size={15} /> Cadastrar usuário</button></div></section><section className="panel access-preview-panel"><div className="panel-heading"><div><span className="panel-kicker">Prévia de acesso</span><h2>Como ficará para a pessoa</h2></div><ShieldCheck size={18} color="var(--teal-dark)" /></div><div className="access-user-preview"><span className="preview-avatar">AP</span><div><b>Ana Paula Souza</b><small>REG-00000 · {role}</small></div></div><div className="preview-divider" /><span className="panel-kicker">Pode acessar</span><div className="preview-permissions">{selectedModules.map((module) => <span key={module}><CheckCircle2 size={13} />{module}</span>)}</div><div className="preview-note"><LockKeyhole size={14} /><span>Toda ação será registrada com usuário, registro, data/hora e módulo.</span></div></section></div>
+    <section className="panel user-list-panel"><div className="panel-heading"><div><span className="panel-kicker">Usuários cadastrados</span><h2>Controle de acesso da equipe</h2></div><button className="button button--secondary button--compact"><Search size={14} /> Buscar usuário</button></div><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Usuário</th><th>Registro</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>{[["Carlos Ribeiro", "REG-00012", "Administrador", "Todos", "Hoje, 09:21", "Ativo", "teal"], ["Ana Paula Souza", "REG-00027", "Supervisor de produção", "3 módulos", "Hoje, 08:57", "Convite pendente", "orange"], ["Mariana Costa", "REG-00041", "Operadora", "Produção · RH", "Hoje, 06:58", "Ativo", "teal"]].map((row) => <tr key={row[0]}><td className="module-primary">{row[0]}</td><td>{row[1]}</td><td>{row[2]}</td><td className="muted-cell">{row[3]}</td><td className="muted-cell">{row[4]}</td><td><StatusPill label={row[5]} tone={row[6] as Tone} /></td><td><button className="row-more"><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></div></section>
+  </>;
+}
+
 function SettingsPage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
   const cards = [
     { title: "Dados mestres", description: "Produtos, moldes, injetoras, clientes e fornecedores.", icon: DatabaseIcon, tone: "teal" as Tone, action: "Gerenciar cadastros" },
@@ -396,7 +445,7 @@ export default function Home() {
     {mobileOpen && <button className="sidebar-overlay" aria-label="Fechar menu" onClick={() => setMobileOpen(false)} />}
     <main className="main-content">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><form className="global-search" onSubmit={handleSearch}><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ordens, lotes, produtos..." /><kbd>⌘ K</kbd></form><div className="topbar-actions"><span className={`access-mode ${isLogged ? "access-mode--logged" : ""}`}><span className="access-mode__dot" />{isLogged ? `Registro ${user?.record}` : "Acesso público"}</span><div className="topbar-date"><CalendarClock size={16} /><span>16 out. 2026</span><ChevronDown size={14} /></div><button className="topbar-icon" onClick={handleNotification}><span className="notification-dot" /><BellIcon /></button>{isLogged ? <div className="topbar-avatar">{user?.name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div> : <button className="login-button" onClick={() => setAccessModal("login")}><LogIn size={14} /> Entrar</button>}</div></header>
-      <div className="page-content">{current.href === "/" ? <Dashboard onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.restricted && !isLogged ? <RestrictedPage current={current} onNewOrder={handleNewOrder} onLogin={() => setAccessModal("login")} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : <ModulePage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} />}</div>
+      <div className="page-content">{current.href === "/" ? <Dashboard onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.restricted && !isLogged ? <RestrictedPage current={current} onNewOrder={handleNewOrder} onLogin={() => setAccessModal("login")} /> : current.href === "/rh" ? <RhPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/usuarios" ? <UsersAccessPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : <ModulePage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} />}</div>
       <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b></span></footer>
     </main>
     {accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}

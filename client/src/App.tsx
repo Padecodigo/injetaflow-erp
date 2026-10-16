@@ -14,8 +14,10 @@ function Router() {
       <Route path="/qualidade" component={Home} />
       <Route path="/estoque" component={Home} />
       <Route path="/manutencao" component={Home} />
+      <Route path="/rh" component={Home} />
       <Route path="/ordens" component={Home} />
       <Route path="/financeiro" component={Home} />
+      <Route path="/usuarios" component={Home} />
       <Route path="/configuracoes" component={Home} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

@@ -5,8 +5,10 @@
     { "path": "/qualidade", "title": "Qualidade" },
     { "path": "/estoque", "title": "Estoque" },
     { "path": "/manutencao", "title": "Manutenção" },
+    { "path": "/rh", "title": "RH e ponto" },
     { "path": "/ordens", "title": "Ordens de produção" },
     { "path": "/financeiro", "title": "Financeiro" },
+    { "path": "/usuarios", "title": "Usuários e acessos" },
     { "path": "/configuracoes", "title": "Configurações" }
   ]
 }
