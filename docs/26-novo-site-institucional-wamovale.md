@@ -44,4 +44,4 @@ www.wamovale.com.br
 
 ## Próxima implementação
 
-As rotas públicas que hoje apontam para o site antigo devem ser substituídas por páginas internas do novo site: `/quem-somos`, `/produtos`, `/injecao-plastica`, `/moldes-e-ferramentaria`, `/materiais-e-pigmentos`, `/qualidade`, `/contato`, `/cotacao` e `/trabalhe-conosco`.
+As rotas públicas foram substituídas por páginas internas do novo site: `/quem-somos`, `/produtos`, `/injecao-plastica`, `/moldes-e-ferramentaria`, `/materiais-e-pigmentos`, `/qualidade`, `/contato`, `/cotacao` e `/trabalhe-conosco`.

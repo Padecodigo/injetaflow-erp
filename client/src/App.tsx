@@ -12,6 +12,13 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/cotacao" component={Home} />
       <Route path="/trabalhe-conosco" component={Home} />
+      <Route path="/quem-somos" component={Home} />
+      <Route path="/produtos" component={Home} />
+      <Route path="/injecao-plastica" component={Home} />
+      <Route path="/moldes-e-ferramentaria" component={Home} />
+      <Route path="/materiais-e-pigmentos" component={Home} />
+      <Route path="/qualidade" component={Home} />
+      <Route path="/contato" component={Home} />
       <Route path="/erp" component={Home} />
       <Route path="/producao" component={Home} />
       <Route path="/moldes" component={Home} />
