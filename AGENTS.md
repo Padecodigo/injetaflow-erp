@@ -28,6 +28,10 @@ Antes de implementar, leia `CONTEXT.md`, `docs/15-stack-tecnologica.md`, `docs/1
 16. Feature flags de `empresas.modulos_ativos` devem ser verificadas na UI, nos casos de uso e no backend; nunca somente no frontend.
 17. Módulos devem ser isolados por `src/modules/<modulo>` e não podem criar dependência circular.
 18. Dados de RH, saúde ocupacional, GPS, financeiro e fiscal possuem acesso restrito e retenção própria.
+19. Cada agente trabalha em branch própria e em um módulo delimitado; não sobrescrever trabalho de outro agente.
+20. Alterações compartilhadas em tipos, migrations, design system ou workflows exigem coordenação e revisão do agente de plataforma/arquiteto.
+21. Toda entrega profissional deve estar pronta para Pull Request, passar pelo GitHub Actions e respeitar `main` protegida.
+22. Nunca commitar secrets, service role key, dados reais de colaboradores, GPS ou saúde ocupacional.
 
 ## Padrão de trabalho
 Planeje antes de codificar. Faça a menor mudança vertical que entregue valor. Rode typecheck, lint, testes e build. Revise segurança, permissões, multi-tenancy, auditoria e responsividade antes de concluir.

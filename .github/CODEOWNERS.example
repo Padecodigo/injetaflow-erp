@@ -1,0 +1,17 @@
+# Copie para .github/CODEOWNERS e substitua os placeholders pelos usuários/equipes reais.
+
+* @time-arquitetura
+/src/modules/empresas/ @owner-empresas
+/src/modules/usuarios/ @owner-usuarios
+/src/modules/rh/ @owner-rh
+/src/modules/producao/ @owner-producao
+/src/modules/qualidade/ @owner-qualidade
+/src/modules/estoque/ @owner-estoque
+/src/modules/manutencao/ @owner-manutencao
+/src/modules/financeiro/ @owner-financeiro
+/src/modules/fiscal/ @owner-fiscal
+/src/modules/contabil/ @owner-contabil
+/src/modules/compliance/ @owner-compliance
+/supabase/migrations/ @time-plataforma @time-qa
+/.github/ @time-plataforma
+/docs/ @time-arquitetura

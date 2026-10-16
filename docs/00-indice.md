@@ -33,12 +33,20 @@ Esta pasta contém a documentação de produto, domínio, UX, arquitetura e enge
 | `16-catalogo-modulos.md` | Catálogo corporativo completo de módulos e dependências. |
 | `17-rh-ponto-e-geolocalizacao.md` | RH, ponto móvel, GPS, geofence e rede local. |
 | `18-bpf-gmp-compliance.md` | BPF/GMP, sala limpa, CoA, CAPA e documentos regulatórios. |
+| `19-desenvolvimento-profissional-github.md` | Branches, PRs, ambientes, releases e proteção de main. |
+| `20-multiagentes-grok-cursor.md` | Divisão de responsabilidades entre agentes por módulo. |
+| `21-github-actions-e-cicd.md` | Pipeline de CI/CD, secrets, migrations e rollback. |
+| `22-prompt-start-grok-cursor.md` | Prompt de inicialização do projeto para cada agente. |
+| `23-prompt-agente-modulo.md` | Prompt de execução por módulo com contrato de entrega. |
 | `ARCHITECTURE.md` | Diagramas Mermaid, fluxo de dados e limites de módulos. |
 | `WORKFLOWS.md` | Playbooks para features, endpoints, migrations e integrações. |
 | `TESTING.md` | Ferramentas, convenções, fixtures e cenários de teste. |
 | `DECISIONS.md` | Registro vivo das decisões arquiteturais. |
 | `PROGRESS.md` | Memória de desenvolvimento e próximos passos. |
 | `supabase/migrations/0001_fundacao_empresas_usuarios.sql` | Fundação SQL de empresas, módulos ativos, usuários e RLS. |
+| `.github/workflows/ci.yml` | Workflow inicial de qualidade para Pull Requests e main. |
+| `.github/PULL_REQUEST_TEMPLATE.md` | Checklist profissional para revisão de código. |
+| `.github/CODEOWNERS.example` | Modelo de ownership por módulo. |
 | `SKILL.md` | Skill de domínio para um agente de desenvolvimento do InjetaFlow. |
 
 ## Princípios do projeto
