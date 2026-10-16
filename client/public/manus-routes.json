@@ -9,6 +9,7 @@
     { "path": "/ordens", "title": "Ordens de produção" },
     { "path": "/financeiro", "title": "Financeiro" },
     { "path": "/usuarios", "title": "Usuários e acessos" },
+    { "path": "/meu-perfil", "title": "Meu perfil" },
     { "path": "/configuracoes", "title": "Configurações" }
   ]
 }
