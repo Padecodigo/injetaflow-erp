@@ -433,6 +433,14 @@ function SlidersIcon() { return <span className="sliders-icon"><span /><span /><
 function DatabaseIcon({ size = 19 }: { size?: number }) { return <span className="database-icon" style={{ width: size, height: size }}><span /></span>; }
 function PlugIcon({ size = 19 }: { size?: number }) { return <span className="plug-icon" style={{ width: size, height: size }}>↗</span>; }
 
+function PublicPortal() {
+  return <div className="public-portal"><header className="portal-header"><a href="https://www.wamovale.com.br/" target="_blank" rel="noreferrer"><img src="/manus-storage/wamovale-logo_ac2ee4a4.jpg" alt="Wamovale" /></a><nav><a href="https://www.wamovale.com.br/quem-somos/" target="_blank" rel="noreferrer">Quem somos</a><a href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer">Produtos</a><a href="https://www.wamovale.com.br/contatos/" target="_blank" rel="noreferrer">Contato</a><Link className="portal-login-link" href="/erp"><LogIn size={15} /> Acessar ERP</Link></nav></header><main className="portal-main"><div className="portal-copy"><span className="portal-kicker">Wamovale · Gestão industrial</span><h1>Injeção plástica com <em>controle</em> de ponta a ponta.</h1><p>Uma área digital para conectar produção, qualidade, moldes, ferramentaria, pessoas e resultados da Wamovale em um só lugar.</p><div className="portal-actions"><Link className="button button--portal" href="/erp"><LogIn size={16} /> Acessar ERP</Link><a className="portal-secondary-link" href="https://www.wamovale.com.br/contatos/" target="_blank" rel="noreferrer">Falar com a Wamovale <ChevronRight size={16} /></a></div></div><div className="portal-visual"><div className="portal-orbit portal-orbit--one" /><div className="portal-orbit portal-orbit--two" /><div className="portal-card portal-card--main"><span className="portal-card__label">Operação conectada</span><strong>Wamovale ERP</strong><div className="portal-card__line"><span /><b>82,4%</b><small>OEE médio</small></div><div className="portal-card__line"><span /><b>128.420</b><small>peças hoje</small></div></div><div className="portal-card portal-card--float"><span>✓</span><div><b>Qualidade em dia</b><small>Rastreabilidade ativa</small></div></div></div></main><footer className="portal-footer"><span>Transformando termoplásticos em soluções.</span><span>São José dos Campos · SP</span></footer></div>;
+}
+
+function ErpEntryPage({ onLogin }: { onLogin: () => void }) {
+  return <div className="erp-entry"><div className="erp-entry__card"><img src="/manus-storage/wamovale-logo_ac2ee4a4.jpg" alt="Wamovale" /><span className="portal-kicker">Área interna</span><h1>Wamovale ERP</h1><p>Entre com seu e-mail corporativo e senha para acessar seus módulos, seu ponto e seus dados.</p><button className="button button--portal" onClick={onLogin}><KeyRound size={16} /> Entrar com e-mail e senha</button><Link className="erp-back-link" href="/"><ChevronRight size={15} /> Voltar ao site público</Link></div></div>;
+}
+
 function AccessModal({ mode, isLogged, userName, onClose, onLogin, onAction }: { mode: "login" | "record"; isLogged: boolean; userName?: string; onClose: () => void; onLogin: (email: string, password: string) => void; onAction: (record: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -448,6 +456,7 @@ export default function Home() {
   const [isLogged, setIsLogged] = useState(false);
   const [user, setUser] = useState<{ name: string; record: string } | null>(null);
   const [accessModal, setAccessModal] = useState<"login" | "record" | null>(null);
+  const isErpEntry = location === "/erp";
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
 
   const handleNewOrder = () => setAccessModal("record");
@@ -456,6 +465,9 @@ export default function Home() {
   const handleRestrictedNavigation = (item: NavItem) => { if (item.restricted && !isLogged) { toast.info("Acesso autorizado necessário", { description: `Entre para acessar ${item.label} e manter a rastreabilidade.` }); setAccessModal("login"); return; } navigate(item.href); setMobileOpen(false); };
   const handleNotification = () => toast("Você está em dia", { description: "Não há novas notificações além dos 3 alertas operacionais." });
   const handleSearch = (event: React.FormEvent) => { event.preventDefault(); if (search.trim()) toast.info(`Busca por “${search.trim()}”`, { description: "A busca global será conectada aos dados reais na próxima etapa." }); };
+
+  if (location === "/") return <PublicPortal />;
+  if (isErpEntry && !isLogged) return <><ErpEntryPage onLogin={() => setAccessModal("login")} />{accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}</>;
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? "sidebar--open" : ""}`}>

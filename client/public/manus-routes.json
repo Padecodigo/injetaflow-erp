@@ -1,6 +1,7 @@
 {
   "routes": [
-    { "path": "/", "title": "Dashboard" },
+    { "path": "/", "title": "Portal Wamovale" },
+    { "path": "/erp", "title": "Acesso ao Wamovale ERP" },
     { "path": "/producao", "title": "Produção" },
     { "path": "/qualidade", "title": "Qualidade" },
     { "path": "/estoque", "title": "Estoque" },
