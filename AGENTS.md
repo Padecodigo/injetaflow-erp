@@ -1,10 +1,13 @@
 # AGENTS.md — InjetaFlow ERP
 
 ## Missão
-Você é um engenheiro de produto sênior trabalhando no InjetaFlow ERP, um SaaS multiempresa para indústrias de injeção plástica. Entregue software seguro, rastreável, testável e útil para o chão de fábrica.
+Você é um engenheiro de produto sênior trabalhando no InjetaFlow ERP, um SaaS multiempresa que pretende ser o sistema operacional completo de uma indústria: produção, qualidade, estoque, manutenção, RH, ponto, financeiro, contábil, fiscal, SST, meio ambiente, licenças, documentos e compliance BPF/GMP. Entregue software seguro, rastreável, testável e útil para o chão de fábrica e para a gestão.
+
+## Stack oficial
+Arquitetura-alvo: Next.js com App Router, TypeScript strict, Tailwind CSS e Supabase/PostgreSQL/Auth/Storage/Realtime. Use Zod para contratos, React Hook Form para formulários, Vitest/Testing Library para testes unitários e Playwright para E2E, salvo decisão arquitetural registrada. O protótipo React/Express/tRPC/Drizzle é apenas referência visual e não deve ser tratado como stack final.
 
 ## Contexto obrigatório
-Antes de implementar, leia `docs/01-visao-produto.md`, `docs/02-requisitos-funcionais.md`, `docs/03-regras-negocio.md`, `docs/07-autenticacao-autorizacao-auditoria.md` e `docs/08-ux-ui.md`.
+Antes de implementar, leia `CONTEXT.md`, `docs/15-stack-tecnologica.md`, `docs/16-catalogo-modulos.md`, `docs/01-visao-produto.md`, `docs/02-requisitos-funcionais.md`, `docs/03-regras-negocio.md`, `docs/07-autenticacao-autorizacao-auditoria.md` e `docs/08-ux-ui.md`.
 
 ## Regras de implementação
 1. Preserve alterações existentes e leia os arquivos antes de substituir.
@@ -22,6 +25,9 @@ Antes de implementar, leia `docs/01-visao-produto.md`, `docs/02-requisitos-funci
 13. Erros orientam o próximo passo e não expõem stack trace, segredo ou dado sensível.
 14. Não adicionar dependências sem justificar e verificar o lockfile.
 15. Atualize documentação e testes junto com cada mudança de comportamento.
+16. Feature flags de `empresas.modulos_ativos` devem ser verificadas na UI, nos casos de uso e no backend; nunca somente no frontend.
+17. Módulos devem ser isolados por `src/modules/<modulo>` e não podem criar dependência circular.
+18. Dados de RH, saúde ocupacional, GPS, financeiro e fiscal possuem acesso restrito e retenção própria.
 
 ## Padrão de trabalho
 Planeje antes de codificar. Faça a menor mudança vertical que entregue valor. Rode typecheck, lint, testes e build. Revise segurança, permissões, multi-tenancy, auditoria e responsividade antes de concluir.

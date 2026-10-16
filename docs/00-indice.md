@@ -9,6 +9,7 @@ Esta pasta contém a documentação de produto, domínio, UX, arquitetura e enge
 3. Use `docs/11-prompt-mestre-cursor.md` para iniciar uma nova sessão de implementação.
 4. Antes de criar um módulo, leia `docs/02-requisitos-funcionais.md`, `docs/03-regras-negocio.md` e `docs/07-autenticacao-autorizacao-auditoria.md`.
 5. Antes de alterar dados ou API, leia `docs/04-arquitetura-tecnica.md` e `docs/05-modelo-dados.md`.
+6. Para o projeto real, leia `docs/15-stack-tecnologica.md` e `CONTEXT.md`; o protótipo anterior usa uma stack diferente e serve apenas como referência visual.
 
 ## Documentos
 
@@ -28,6 +29,16 @@ Esta pasta contém a documentação de produto, domínio, UX, arquitetura e enge
 | `12-convencoes-clean-code.md` | Convenções de código, Git, migrations e revisão. |
 | `13-template-adr.md` | Modelo para registrar decisões arquiteturais. |
 | `14-backlog-inicial.md` | Backlog priorizado para sair do protótipo e chegar ao produto. |
+| `15-stack-tecnologica.md` | Stack oficial, sistema Lego, feature flags e estrutura Next.js/Supabase. |
+| `16-catalogo-modulos.md` | Catálogo corporativo completo de módulos e dependências. |
+| `17-rh-ponto-e-geolocalizacao.md` | RH, ponto móvel, GPS, geofence e rede local. |
+| `18-bpf-gmp-compliance.md` | BPF/GMP, sala limpa, CoA, CAPA e documentos regulatórios. |
+| `ARCHITECTURE.md` | Diagramas Mermaid, fluxo de dados e limites de módulos. |
+| `WORKFLOWS.md` | Playbooks para features, endpoints, migrations e integrações. |
+| `TESTING.md` | Ferramentas, convenções, fixtures e cenários de teste. |
+| `DECISIONS.md` | Registro vivo das decisões arquiteturais. |
+| `PROGRESS.md` | Memória de desenvolvimento e próximos passos. |
+| `supabase/migrations/0001_fundacao_empresas_usuarios.sql` | Fundação SQL de empresas, módulos ativos, usuários e RLS. |
 | `SKILL.md` | Skill de domínio para um agente de desenvolvimento do InjetaFlow. |
 
 ## Princípios do projeto
