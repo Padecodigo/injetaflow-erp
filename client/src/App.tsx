@@ -24,6 +24,7 @@ function Router() {
       <Route path="/moldes" component={Home} />
       <Route path="/materia-prima" component={Home} />
       <Route path="/pigmentos" component={Home} />
+      <Route path="/qualidade" component={Home} />
       <Route path="/estoque" component={Home} />
       <Route path="/manutencao" component={Home} />
       <Route path="/rh" component={Home} />

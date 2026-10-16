@@ -14,6 +14,7 @@
     { "path": "/moldes", "title": "Moldes e ferramentaria" },
     { "path": "/materia-prima", "title": "Matéria-prima" },
     { "path": "/pigmentos", "title": "Pigmentos e cores" },
+    { "path": "/qualidade", "title": "Qualidade" },
     { "path": "/qualidade-institucional", "title": "Qualidade institucional" },
     { "path": "/estoque", "title": "Estoque" },
     { "path": "/manutencao", "title": "Manutenção" },
