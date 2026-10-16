@@ -12,6 +12,11 @@ Factories devem criar tenant, unidade, usuário, registro de operador, produto, 
 ## Sempre testar
 Regras de estado; quantidades e unidades; lotes e validade; idempotência; transações; auditoria; tenant isolation; acesso público; permissão negativa; registro ausente/inválido; erro 4xx/5xx; integração indisponível; acessibilidade básica; responsividade de telas críticas.
 
+## Política obrigatória de mudança
+Toda mudança de código deve incluir ou atualizar teste unitário e teste de integração. Mudanças que atravessam a jornada completa também devem incluir teste E2E. Não considerar uma feature concluída apenas porque compila.
+
+Todo bug corrigido deve começar com um teste de regressão que reproduza o comportamento incorreto. Depois da correção, o mesmo teste deve passar e permanecer no conjunto permanente. O PR deve explicar qual bug o teste protege.
+
 ## Pode ser simplificado
 Não testar implementação interna de um componente sem comportamento observável. Não criar snapshot gigante de páginas inteiras. Não usar teste visual como substituto de teste de autorização.
 
@@ -19,4 +24,4 @@ Não testar implementação interna de um componente sem comportamento observáv
 Somente dados sintéticos. Relógio, aleatoriedade e rede devem ser controláveis. Testes não podem depender de ordem global ou compartilhar mutações entre casos.
 
 ## Pipeline mínimo
-`pnpm check`, `pnpm test`, build, migration check, testes de contrato e smoke E2E. Falha de lint, typecheck, segurança ou isolamento bloqueia merge.
+`pnpm check`, `pnpm test`, build, migration check, testes de contrato, testes de integração e smoke E2E. Falha de lint, typecheck, segurança, regressão, integração ou isolamento bloqueia merge.

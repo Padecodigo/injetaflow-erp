@@ -12,7 +12,9 @@ Você está entrando no projeto InjetaFlow ERP. Antes de responder ou alterar qu
 7. Toda mutação exige autenticação, permissão, tenant, unidade quando aplicável, número de registro e auditoria.
 8. Feature flags em empresas.modulos_ativos devem bloquear UI, caso de uso e backend.
 9. Trabalhe em branch própria e deixe a mudança pronta para Pull Request.
-10. Execute typecheck, lint, testes e build aplicáveis.
+10. Toda mudança deve incluir teste unitário e teste de integração; mudanças de jornada também exigem E2E.
+11. Todo bug deve ser corrigido com teste de regressão que reproduza o defeito antes da correção.
+12. Execute typecheck, lint, testes e build aplicáveis.
 
 Ao iniciar, responda somente com:
 - módulo responsável;

@@ -22,7 +22,7 @@ ENTREGA
 Crie UI, caso de uso, validação, API, RLS/migration se necessário, testes unitários/integrados/E2E, estados de erro e documentação. Use Next.js App Router, TypeScript strict, Tailwind e Supabase conforme docs/15-stack-tecnologica.md.
 
 VALIDAÇÃO
-Execute typecheck, lint, testes e build. Teste sucesso, input inválido, sem login, sem permissão, registro inválido, módulo desligado, estado incompatível, tenant incorreto e repetição idempotente.
+Toda mudança exige teste unitário e teste de integração. Se atravessar a jornada do usuário, adicione teste E2E. Se for correção de bug, primeiro crie um teste de regressão que reproduza o defeito, confirme a falha, corrija a causa e confirme que o teste passa. Execute typecheck, lint, testes e build. Teste sucesso, input inválido, sem login, sem permissão, registro inválido, módulo desligado, estado incompatível, tenant incorreto e repetição idempotente.
 
 FINAL
 Entregue resumo, arquivos, testes, decisões, riscos, pendências e instruções para revisão do agente arquiteto.

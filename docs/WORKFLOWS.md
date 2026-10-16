@@ -8,7 +8,16 @@
 5. Crie endpoint tipado e testes negativos.
 6. Implemente UI com loading, vazio, erro, bloqueio e sucesso.
 7. Atualize docs, backlog e prompt de uso quando necessário.
-8. Rode typecheck, testes e build.
+8. Crie teste unitário e teste de integração; adicione E2E se a jornada do usuário mudar.
+9. Rode typecheck, todos os testes e build.
+
+## Correção de bug
+1. Reproduza o bug com um teste de regressão antes de corrigir.
+2. Confirme que o teste falha pelo motivo esperado.
+3. Corrija a causa, não apenas o sintoma.
+4. Faça o teste de regressão passar.
+5. Adicione ou atualize o teste de integração afetado.
+6. Rode toda a suíte relevante e documente a causa e a proteção criada.
 
 ## Novo endpoint
 1. Defina método, rota, input, output e códigos de erro.
@@ -46,4 +55,4 @@
 7. Não permitir que uma falha externa duplique estoque ou produção.
 
 ## Definition of Done
-Código, testes, autorização, auditoria, documentação, observabilidade, estados de UI, revisão de tenant isolation, typecheck, testes e build concluídos.
+Código, teste unitário, teste de integração, teste de regressão quando aplicável, autorização, auditoria, documentação, observabilidade, estados de UI, revisão de tenant isolation, typecheck, testes e build concluídos.

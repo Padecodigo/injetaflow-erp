@@ -22,6 +22,8 @@ Descreva o problema e o resultado entregue.
 - [ ] Mutação exige número de registro.
 - [ ] Auditoria foi implementada.
 - [ ] Testes cobrem sucesso e falhas de autorização.
+- [ ] Toda mudança possui teste unitário e teste de integração.
+- [ ] Se for correção de bug, existe teste de regressão reproduzindo o defeito.
 - [ ] Migration e rollback foram revisados.
 - [ ] UI tem estados de loading, vazio, erro e bloqueio.
 - [ ] Rodei check, testes e build.

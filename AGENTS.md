@@ -24,14 +24,15 @@ Antes de implementar, leia `CONTEXT.md`, `docs/15-stack-tecnologica.md`, `docs/1
 12. Datas e horários são armazenados em UTC e apresentados no fuso da unidade.
 13. Erros orientam o próximo passo e não expõem stack trace, segredo ou dado sensível.
 14. Não adicionar dependências sem justificar e verificar o lockfile.
-15. Atualize documentação e testes junto com cada mudança de comportamento.
-16. Feature flags de `empresas.modulos_ativos` devem ser verificadas na UI, nos casos de uso e no backend; nunca somente no frontend.
-17. Módulos devem ser isolados por `src/modules/<modulo>` e não podem criar dependência circular.
-18. Dados de RH, saúde ocupacional, GPS, financeiro e fiscal possuem acesso restrito e retenção própria.
-19. Cada agente trabalha em branch própria e em um módulo delimitado; não sobrescrever trabalho de outro agente.
-20. Alterações compartilhadas em tipos, migrations, design system ou workflows exigem coordenação e revisão do agente de plataforma/arquiteto.
-21. Toda entrega profissional deve estar pronta para Pull Request, passar pelo GitHub Actions e respeitar `main` protegida.
-22. Nunca commitar secrets, service role key, dados reais de colaboradores, GPS ou saúde ocupacional.
+15. Toda mudança de comportamento exige testes unitários e teste de integração correspondentes; testes E2E devem ser adicionados quando a mudança atravessar a jornada do usuário.
+16. Todo bug corrigido exige um teste de regressão que reproduza o defeito antes da correção e permaneça prevenindo seu retorno.
+17. Feature flags de `empresas.modulos_ativos` devem ser verificadas na UI, nos casos de uso e no backend; nunca somente no frontend.
+18. Módulos devem ser isolados por `src/modules/<modulo>` e não podem criar dependência circular.
+19. Dados de RH, saúde ocupacional, GPS, financeiro e fiscal possuem acesso restrito e retenção própria.
+20. Cada agente trabalha em branch própria e em um módulo delimitado; não sobrescrever trabalho de outro agente.
+21. Alterações compartilhadas em tipos, migrations, design system ou workflows exigem coordenação e revisão do agente de plataforma/arquiteto.
+22. Toda entrega profissional deve estar pronta para Pull Request, passar pelo GitHub Actions e respeitar `main` protegida.
+23. Nunca commitar secrets, service role key, dados reais de colaboradores, GPS ou saúde ocupacional.
 
 ## Padrão de trabalho
 Planeje antes de codificar. Faça a menor mudança vertical que entregue valor. Rode typecheck, lint, testes e build. Revise segurança, permissões, multi-tenancy, auditoria e responsividade antes de concluir.

@@ -13,6 +13,8 @@ Crie uma branch curta. Descreva o problema e o resultado esperado. Implemente um
 - [ ] Auditoria registra antes/depois quando aplicável.
 - [ ] Estados de loading, vazio, erro e sem permissão existem.
 - [ ] Testes cobrem sucesso e falhas de autorização.
+- [ ] Toda mudança possui teste unitário e teste de integração.
+- [ ] Todo bug corrigido possui teste de regressão reproduzindo o defeito.
 - [ ] Migration é versionada e reversível ou possui plano documentado.
 - [ ] UI funciona em desktop, tablet e mobile.
 - [ ] Nenhum segredo ou dado sensível foi commitado.
