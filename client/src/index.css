@@ -245,3 +245,10 @@ tbody td { height: 53px; padding: 8px 10px; border-top: 1px solid #f0f2f4; color
 .profile-note { display: flex; gap: 7px; margin-top: 19px; padding: 10px; color: #839099; background: #f5f8f9; border-radius: 8px; font-size: 9px; line-height: 1.4; }
 .profile-note svg { flex: none; color: var(--teal-dark); }
 @media (max-width: 640px) { .profile-hero { align-items: flex-start; flex-direction: column; padding: 17px 15px; }.profile-grid, .profile-grid--bottom { grid-template-columns: 1fr; }.profile-access-panel, .profile-score-panel, .profile-history-panel, .profile-docs-panel { padding: 17px 15px; }.profile-score { flex-wrap: wrap; }.score-stars { margin-left: 0; width: 100%; }.profile-timeline b { white-space: normal; } }
+
+/* Identidade visual do tenant Wamovale — referência pública do site wamovale.com.br */
+:root { --teal: #f28c18; --teal-dark: #c65d08; --teal-soft: #fff2e2; }
+.tenant-logo { display: block; width: 116px; height: 48px; object-fit: contain; object-position: left center; border-radius: 5px; background: #fff; }
+.brand { gap: 7px; }
+.brand-badge { color: #f5a14c; background: rgba(242,140,24,.16); }
+.workspace-avatar { color: #ffd29a; background: rgba(242,140,24,.19); }

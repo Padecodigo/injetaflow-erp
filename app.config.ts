@@ -1,3 +1,3 @@
 export default {
-  logoUrl: "https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/box.svg",
+  logoUrl: "https://wamovale.com.br/wp-content/uploads/2019/09/logo_wamovale.jpg",
 };
