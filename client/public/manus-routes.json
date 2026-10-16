@@ -1,6 +1,8 @@
 {
   "routes": [
     { "path": "/", "title": "Portal Wamovale" },
+    { "path": "/cotacao", "title": "Enviar projeto para cotação" },
+    { "path": "/trabalhe-conosco", "title": "Trabalhe conosco" },
     { "path": "/erp", "title": "Acesso ao Wamovale ERP" },
     { "path": "/producao", "title": "Produção" },
     { "path": "/qualidade", "title": "Qualidade" },
