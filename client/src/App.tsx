@@ -14,6 +14,9 @@ function Router() {
       <Route path="/trabalhe-conosco" component={Home} />
       <Route path="/erp" component={Home} />
       <Route path="/producao" component={Home} />
+      <Route path="/moldes" component={Home} />
+      <Route path="/materia-prima" component={Home} />
+      <Route path="/pigmentos" component={Home} />
       <Route path="/qualidade" component={Home} />
       <Route path="/estoque" component={Home} />
       <Route path="/manutencao" component={Home} />

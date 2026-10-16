@@ -62,6 +62,9 @@ type NavItem = {
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard, section: "Visão geral" },
   { label: "Produção", href: "/producao", icon: Factory, section: "Operação" },
+  { label: "Moldes & ferramentaria", href: "/moldes", icon: Wrench, section: "Engenharia", restricted: true },
+  { label: "Matéria-prima", href: "/materia-prima", icon: Boxes, restricted: true },
+  { label: "Pigmentos & cores", href: "/pigmentos", icon: Sparkles, restricted: true },
   { label: "Qualidade", href: "/qualidade", icon: ShieldCheck },
   { label: "Estoque", href: "/estoque", icon: Boxes },
   { label: "Manutenção", href: "/manutencao", icon: Wrench },
@@ -79,6 +82,9 @@ const pageCopy: Record<string, { eyebrow: string; title: string; description: st
     title: "Produção",
     description: "Acompanhe o ritmo da fábrica e ajuste a programação sem perder o próximo ciclo.",
   },
+  "/moldes": { eyebrow: "Engenharia e ferramentaria", title: "Moldes & ferramentaria", description: "Controle o ciclo de vida dos moldes, cavidades, manutenções, ajustes e disponibilidade por máquina." },
+  "/materia-prima": { eyebrow: "Materiais controlados", title: "Matéria-prima", description: "Rastreie resinas, aditivos, cargas, lotes, validade, silos, big-bags e consumo por ordem." },
+  "/pigmentos": { eyebrow: "Desenvolvimento de cores", title: "Pigmentos & cores", description: "Gerencie masterbatch, formulações, padrões de cor, testes e aprovação por produto." },
   "/qualidade": {
     eyebrow: "Conformidade em dia",
     title: "Qualidade",
@@ -167,6 +173,51 @@ const alerts = [
 ];
 
 const moduleData: Record<string, { metrics: { label: string; value: string; note: string; tone: Tone }[]; headers: string[]; rows: string[][] }> = {
+  "/moldes": {
+    metrics: [
+      { label: "Moldes cadastrados", value: "186", note: "42 ativos hoje", tone: "blue" },
+      { label: "Disponibilidade", value: "92,8%", note: "+3,1% no mês", tone: "teal" },
+      { label: "Preventivas vencendo", value: "07", note: "nos próximos 14 dias", tone: "orange" },
+      { label: "Cavidades ativas", value: "1.248", note: "de 1.296 instaladas", tone: "lime" },
+    ],
+    headers: ["Molde", "Produto", "Cavidades", "Ciclos", "Última manutenção", "Próxima ação", "Status"],
+    rows: [
+      ["M-1024", "Frasco PET 500ml", "8 / 8", "842.110", "28/09/26", "Lubrificação", "Disponível"],
+      ["M-0871", "Tampa Flip-top 28mm", "16 / 16", "1.204.820", "04/10/26", "Troca de inserto", "Em uso"],
+      ["M-1140", "Pote cosmético 250g", "4 / 4", "388.420", "12/09/26", "Inspeção dimensional", "Atenção"],
+      ["M-0920", "Frasco PCR 1L", "2 / 2", "96.240", "08/10/26", "—", "Disponível"],
+    ],
+  },
+  "/materia-prima": {
+    metrics: [
+      { label: "Resinas em estoque", value: "42,8 t", note: "19 dias de cobertura", tone: "blue" },
+      { label: "Lotes rastreados", value: "128", note: "100% identificados", tone: "teal" },
+      { label: "Em quarentena", value: "03", note: "aguardando laudo", tone: "orange" },
+      { label: "Validade crítica", value: "06", note: "próximos 30 dias", tone: "red" },
+    ],
+    headers: ["Código", "Material", "Lote", "Origem", "Saldo", "Validade", "Status"],
+    rows: [
+      ["RES-PET-01", "PET virgem grau alimentício", "PET-24091", "Fornecedor A", "12.400 kg", "18/03/27", "Liberado"],
+      ["RES-PCR-02", "PCR pós-consumo", "PCR-24062", "Fornecedor B", "4.820 kg", "04/02/27", "Liberado"],
+      ["AD-UV-03", "Aditivo UV", "UV-2610", "Fornecedor C", "320 kg", "21/11/26", "Atenção"],
+      ["RES-ABS-07", "ABS natural", "ABS-24018", "Fornecedor D", "1.180 kg", "09/12/26", "Quarentena"],
+    ],
+  },
+  "/pigmentos": {
+    metrics: [
+      { label: "Cores ativas", value: "74", note: "padrões aprovados", tone: "blue" },
+      { label: "Masterbatch em estoque", value: "2,4 t", note: "34 SKUs disponíveis", tone: "teal" },
+      { label: "Testes em aprovação", value: "05", note: "aguardando qualidade", tone: "orange" },
+      { label: "Aderência de cor", value: "98,2%", note: "últimos 90 dias", tone: "lime" },
+    ],
+    headers: ["Código", "Cor / aplicação", "Masterbatch", "Concentração", "Padrão", "Último teste", "Status"],
+    rows: [
+      ["COR-BR-04", "Branco tampa 28mm", "MB-BRANCO-04", "2,0%", "RAL 9003", "14/10/26", "Aprovado"],
+      ["COR-AZ-12", "Azul frasco 500ml", "MB-AZUL-12", "1,4%", "Amostra AP-12", "13/10/26", "Aprovado"],
+      ["COR-VD-08", "Verde linha alimentícia", "MB-VERDE-08", "1,8%", "Pantone 361C", "12/10/26", "Em teste"],
+      ["COR-NT-01", "Natural translúcido", "—", "—", "Padrão interno", "10/10/26", "Aprovado"],
+    ],
+  },
   "/producao": {
     metrics: [
       { label: "OEE da fábrica", value: "82,4%", note: "+4,8% vs. ontem", tone: "teal" },
@@ -436,7 +487,7 @@ function DatabaseIcon({ size = 19 }: { size?: number }) { return <span className
 function PlugIcon({ size = 19 }: { size?: number }) { return <span className="plug-icon" style={{ width: size, height: size }}>↗</span>; }
 
 function PublicPortal() {
-  return <div className="public-portal"><header className="portal-header"><a href="https://www.wamovale.com.br/" target="_blank" rel="noreferrer"><img src="/manus-storage/wamovale-logo_ac2ee4a4.jpg" alt="Wamovale" /></a><nav><a href="https://www.wamovale.com.br/quem-somos/" target="_blank" rel="noreferrer">Quem somos</a><a href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer">Produtos</a><Link className="portal-career-link" href="/trabalhe-conosco">Trabalhe conosco</Link><a href="https://www.wamovale.com.br/contatos/" target="_blank" rel="noreferrer">Contato</a><Link className="portal-login-link" href="/erp"><LogIn size={15} /> Área do colaborador</Link></nav></header><main className="portal-main"><div className="portal-copy"><span className="portal-kicker">Wamovale · Transformação de termoplásticos</span><h1>Ideias que ganham forma em <em>plástico.</em></h1><p>Peças injetadas, tampas, moldes e soluções sob medida para transformar projetos em produtos de qualidade.</p><div className="portal-actions"><Link className="button button--portal" href="/cotacao"><span>Solicitar orçamento</span><ChevronRight size={16} /></Link><a className="portal-secondary-link" href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer">Conhecer produtos <ChevronRight size={16} /></a></div></div><div className="portal-visual"><div className="portal-orbit portal-orbit--one" /><div className="portal-orbit portal-orbit--two" /><div className="portal-card portal-card--main"><span className="portal-card__label">Soluções sob medida</span><strong>Peças injetadas<br />para o seu projeto</strong><div className="portal-card__line"><span /><b>+20 anos</b><small>de experiência</small></div><div className="portal-card__line"><span /><b>4 setores</b><small>aeronáutico · automotivo · construção · alimentício</small></div></div><div className="portal-card portal-card--float"><span>✓</span><div><b>Qualidade e inovação</b><small>Da ideia ao produto final</small></div></div></div></main><section className="portal-services"><a className="portal-service-link" href="https://www.wamovale.com.br/quem-somos/" target="_blank" rel="noreferrer"><span>01</span><b>Injeção plástica <ChevronRight size={14} /></b><small>Termoplásticos para diferentes aplicações</small></a><a className="portal-service-link" href="https://www.wamovale.com.br/projetos-exclusivos/" target="_blank" rel="noreferrer"><span>02</span><b>Moldes e ferramentaria <ChevronRight size={14} /></b><small>Desenvolvimento, manutenção e usinagem</small></a><a className="portal-service-link" href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer"><span>03</span><b>Tampas e embalagens <ChevronRight size={14} /></b><small>Soluções para alimentos e outros mercados</small></a></section><footer className="portal-footer"><span>Transformando ideias em soluções plásticas.</span><span>São José dos Campos · SP</span></footer></div>;
+  return <div className="public-portal"><header className="portal-header"><a href="https://www.wamovale.com.br/" target="_blank" rel="noreferrer"><img src="/manus-storage/wamovale-logo_ac2ee4a4.jpg" alt="Wamovale" /></a><nav><a href="https://www.wamovale.com.br/quem-somos/" target="_blank" rel="noreferrer">Quem somos</a><a href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer">Produtos</a><Link className="portal-career-link" href="/trabalhe-conosco">Trabalhe conosco</Link><a href="https://www.wamovale.com.br/contatos/" target="_blank" rel="noreferrer">Contato</a><Link className="portal-login-link" href="/erp"><LogIn size={15} /> Área do colaborador</Link></nav></header><main className="portal-main"><div className="portal-copy"><span className="portal-kicker">Wamovale · Transformação de termoplásticos</span><h1>Ideias que ganham forma em <em>plástico.</em></h1><p>Peças injetadas, tampas, moldes, matéria-prima e pigmentação para transformar projetos em produtos de qualidade.</p><div className="portal-actions"><Link className="button button--portal" href="/cotacao"><span>Solicitar orçamento</span><ChevronRight size={16} /></Link><a className="portal-secondary-link" href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer">Conhecer produtos <ChevronRight size={16} /></a></div></div><div className="portal-visual"><div className="portal-orbit portal-orbit--one" /><div className="portal-orbit portal-orbit--two" /><div className="portal-card portal-card--main"><span className="portal-card__label">Soluções sob medida</span><strong>Peças injetadas<br />para o seu projeto</strong><div className="portal-card__line"><span /><b>+20 anos</b><small>de experiência</small></div><div className="portal-card__line"><span /><b>4 setores</b><small>aeronáutico · automotivo · construção · alimentício</small></div></div><div className="portal-card portal-card--float"><span>✓</span><div><b>Qualidade e inovação</b><small>Da ideia ao produto final</small></div></div></div></main><section className="portal-services"><a className="portal-service-link" href="https://www.wamovale.com.br/quem-somos/" target="_blank" rel="noreferrer"><span>01</span><b>Injeção plástica <ChevronRight size={14} /></b><small>Termoplásticos para diferentes aplicações</small></a><a className="portal-service-link" href="https://www.wamovale.com.br/projetos-exclusivos/" target="_blank" rel="noreferrer"><span>02</span><b>Moldes e ferramentaria <ChevronRight size={14} /></b><small>Desenvolvimento, manutenção e usinagem</small></a><a className="portal-service-link" href="https://www.wamovale.com.br/embalagens-alimenticios/" target="_blank" rel="noreferrer"><span>03</span><b>Tampas e embalagens <ChevronRight size={14} /></b><small>Soluções para alimentos e outros mercados</small></a></section><section className="portal-capabilities"><div className="portal-capabilities__heading"><span className="portal-kicker">Da engenharia ao produto final</span><h2>Uma solução completa para cada projeto.</h2><p>Conhecimento técnico para escolher materiais, desenvolver moldes e entregar peças consistentes.</p></div><div className="capability-grid"><article><span><Wrench size={17} /></span><h3>Moldes e ferramentaria</h3><p>Desenvolvimento, manutenção, ajustes e usinagem para garantir precisão e repetibilidade.</p><Link href="/cotacao">Falar sobre meu molde <ChevronRight size={14} /></Link></article><article><span><Boxes size={17} /></span><h3>Matéria-prima</h3><p>Seleção de resinas termoplásticas conforme aplicação, desempenho e requisito do produto.</p><Link href="/cotacao">Orientar meu projeto <ChevronRight size={14} /></Link></article><article><span><Sparkles size={17} /></span><h3>Pigmentos e acabamento</h3><p>Desenvolvimento de cores, masterbatch e acabamento alinhados à identidade da sua embalagem.</p><Link href="/cotacao">Desenvolver uma cor <ChevronRight size={14} /></Link></article><article><span><ShieldCheck size={17} /></span><h3>Qualidade e rastreabilidade</h3><p>Controle dimensional, inspeção e acompanhamento para entregar segurança em cada lote.</p><Link href="/cotacao">Conhecer o processo <ChevronRight size={14} /></Link></article></div></section><footer className="portal-footer"><span>Transformando ideias em soluções plásticas.</span><span>São José dos Campos · SP</span></footer></div>;
 }
 
 function ErpEntryPage({ onLogin }: { onLogin: () => void }) {
