@@ -1,0 +1,12 @@
+{
+  "routes": [
+    { "path": "/", "title": "Dashboard" },
+    { "path": "/producao", "title": "Produção" },
+    { "path": "/qualidade", "title": "Qualidade" },
+    { "path": "/estoque", "title": "Estoque" },
+    { "path": "/manutencao", "title": "Manutenção" },
+    { "path": "/ordens", "title": "Ordens de produção" },
+    { "path": "/financeiro", "title": "Financeiro" },
+    { "path": "/configuracoes", "title": "Configurações" }
+  ]
+}
