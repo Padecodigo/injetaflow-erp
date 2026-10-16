@@ -407,3 +407,15 @@ tbody td { height: 53px; padding: 8px 10px; border-top: 1px solid #f0f2f4; color
   .portal-human__image, .portal-human__image img { min-height: 180px; }
   .portal-human__copy h2 { font-size: 34px; }
 }
+
+/* Páginas institucionais com narrativa visual e proximidade humana. */
+.institutional-main { display: block; max-width: 1100px; min-height: calc(100vh - 175px); margin: 0 auto; padding: 42px 28px 80px; }
+.institutional-hero { display: grid; grid-template-columns: .88fr 1.12fr; gap: 56px; align-items: center; margin-bottom: 46px; }
+.institutional-main--solo .institutional-hero { display: block; }
+.institutional-visual { position: relative; min-height: 360px; overflow: hidden; border-radius: 22px; background: #ebe7e1; box-shadow: 0 24px 70px rgba(50,39,26,.12); }
+.institutional-visual img { display: block; width: 100%; height: 390px; object-fit: cover; }
+.institutional-visual::after { content: ""; position: absolute; inset: auto 0 0; height: 34%; background: linear-gradient(transparent, rgba(22,21,20,.44)); pointer-events: none; }
+.institutional-visual span { position: absolute; z-index: 1; left: 22px; right: 22px; bottom: 18px; color: #fff; font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+.institutional-hero .institutional-intro h1 { font-size: clamp(38px, 5vw, 64px); }
+.institutional-grid { max-width: none; }
+@media (max-width: 900px) { .institutional-main { padding: 34px 20px 70px; }.institutional-hero { display: block; margin-bottom: 35px; }.institutional-visual { margin-top: 32px; min-height: 260px; }.institutional-visual img { height: 280px; } }
