@@ -54,6 +54,28 @@ test.describe("portal público", () => {
     await expect(section.getByTestId("record-row").filter({ hasText: `Candidata ${tag}` })).toContainText("curriculo.pdf");
   });
 
+  test("N06: currículo sem arquivo e telefone inválido mostram aviso visível (sem erro 'not focusable')", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+    await page.goto("/trabalhe-conosco");
+    const cv = page.getByRole("form", { name: "Enviar currículo" });
+    await cv.locator('input[name="nome"]').fill("Candidata Demonstração");
+    await cv.locator('input[name="email"]').fill("n06@teste.local");
+    await cv.locator('select[name="area"]').selectOption({ index: 1 });
+    await cv.locator('input[name="telefone"]').fill("liga pra mim");
+    await cv.locator('input[name="consentimento"]').check();
+    await cv.getByRole("button", { name: /Enviar para o RH/ }).click();
+    await expect(cv.getByText("Anexe o currículo (PDF, DOC ou DOCX, até 5 MB).")).toBeVisible();
+    await expect(cv.getByText(/Telefone inválido/)).toBeVisible();
+    await expect(page.getByTestId("envio-ok")).toHaveCount(0);
+    expect(consoleErrors.filter(e => /not focusable/i.test(e))).toEqual([]);
+    // corrigindo, envia
+    await cv.locator('input[name="telefone"]').fill("(12) 99999-0000");
+    await cv.locator('input[name="curriculo"]').setInputFiles(pdf("cv-n06.pdf"));
+    await cv.getByRole("button", { name: /Enviar para o RH/ }).click();
+    await expect(page.getByTestId("envio-ok")).toContainText(/SOL-\d{4}/);
+  });
+
   test("B17: menu hambúrguer no celular; B18: rodapé leva às páginas órfãs", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");

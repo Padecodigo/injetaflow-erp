@@ -612,3 +612,10 @@ nav a.nav-item { text-decoration: none; }
 }
 .presence-origin { display: inline-flex; align-items: center; gap: 4px; color: #7a868f; font-size: 10px; white-space: nowrap; }
 select.select-button { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: #59656f; background: #fff; font-size: 11px; font-weight: 650; }
+
+/* N06: input de currículo continua acessível por teclado (oculto só visualmente) e erro visível */
+.resume-upload { position: relative; }
+.resume-upload input[type="file"] { display: block; position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; opacity: 0; }
+.resume-upload:focus-within { outline: 2px solid #ef7f12; outline-offset: 2px; }
+.resume-upload--error { border-color: #c2410c; background: #fff4ef; color: #9a3412; }
+.public-field-error { display: block; margin-top: 4px; font-size: 11px; }

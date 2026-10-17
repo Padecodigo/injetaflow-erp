@@ -4,6 +4,7 @@ import { ArrowLeft, Boxes, CheckCircle2, ChevronRight, Loader2, LogIn, Mail, Map
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { errorMessage, readFileAsBase64 } from "@/erp/api";
+import { telefoneError } from "@shared/erp/contato";
 
 /*
  * Portal público da Wamovale. Os formulários (cotação, contato e currículo) gravam no servidor
@@ -104,6 +105,15 @@ function Sent({ envio, children, onReset }: { envio: Envio; children: ReactNode;
   );
 }
 
+/** N06: erro visível junto ao campo (texto em português, sem depender do balão nativo). */
+function FieldError({ id, message }: { id: string; message?: string | null }) {
+  return message ? <small id={id} className="erp-field-error public-field-error" role="alert">{message}</small> : null;
+}
+
+function TelefoneField({ error, onInput }: { error?: string | null; onInput: () => void }) {
+  return <><input name="telefone" type="tel" inputMode="tel" autoComplete="tel" maxLength={25} placeholder="(00) 00000-0000" aria-invalid={error ? true : undefined} aria-describedby={error ? "telefone-erro" : undefined} onInput={onInput} /><FieldError id="telefone-erro" message={error} /></>;
+}
+
 function Honeypot() {
   return <label className="sr-only" aria-hidden="true">Não preencha<input name="website" tabIndex={-1} autoComplete="off" /></label>;
 }
@@ -147,10 +157,14 @@ function InstitutionalPage({ path }: { path: string }) {
 function QuotePage() {
   const { envio, enviar, reset } = useEnvio();
   const [fileName, setFileName] = useState("");
+  const [telError, setTelError] = useState<string | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
+    const tel = telefoneError(text(form, "telefone"));
+    setTelError(tel);
+    if (tel) { toast.error("Confira o telefone", { description: tel }); return; }
     try {
       const anexo = await fileToAnexo(form.get("anexo") as File | null);
       const ok = await enviar({
@@ -166,7 +180,7 @@ function QuotePage() {
   return <div className="public-form-page"><PublicHeader /><main className="public-form-main"><div className="public-form-intro"><span className="portal-kicker">Injeção plástica · Desenvolvimento industrial</span><h1>Tem um projeto de peça plástica?</h1><p>Conte o que você já sabe. Nossa equipe avalia a necessidade e identifica o melhor próximo passo para fabricação.</p><div className="form-trust"><span><CheckCircle2 size={15} /> Engenharia e ferramentaria própria</span><span><CheckCircle2 size={15} /> Atendimento para projetos novos e recorrentes</span><span><CheckCircle2 size={15} /> Arquivo técnico opcional no primeiro contato</span></div></div>
     {envio.status === "sent" ? <div className="lead-form"><Sent envio={envio} onReset={reset}>Nossa equipe comercial vai analisar o projeto e retornar pelo e-mail informado.</Sent></div> :
     <form className="lead-form" aria-label="Formulário de cotação" onSubmit={submit}><div className="lead-step"><span>1</span><div><b>O que você precisa?</b><small>Escolha a opção mais próxima do seu momento.</small></div></div><div className="choice-grid">{["Fabricar peças para meu produto", "Desenvolver uma peça nova", "Produzir com molde que já possuo", "Avaliar viabilidade ou transferir produção"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="necessidade" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div><div className="lead-step"><span>2</span><div><b>Em que etapa está o projeto?</b><small>Isso ajuda a equipe a preparar a conversa certa.</small></div></div><div className="choice-grid choice-grid--three">{["Tenho desenho ou arquivo 3D", "Tenho uma amostra física", "Tenho apenas uma ideia ou referência"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="etapa" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div>
-      <div className="lead-fields"><label><span>Seu nome *</span><input name="nome" required minLength={2} placeholder="Nome e sobrenome" /></label><label><span>Empresa *</span><input name="empresa" required minLength={2} placeholder="Nome da empresa" /></label><label><span>E-mail corporativo *</span><input name="email" required type="email" placeholder="voce@empresa.com.br" /></label><label><span>Telefone (opcional)</span><input name="telefone" type="tel" placeholder="(00) 00000-0000" /></label><label><span>Volume estimado</span><select name="volume" defaultValue="Ainda estou avaliando"><option>Lote piloto ou pequenas quantidades</option><option>Produção recorrente em escala industrial</option><option>Ainda estou avaliando</option></select></label><label><span>Material da peça</span><select name="material" defaultValue="Preciso de orientação"><option>Já sei qual material preciso</option><option>Preciso de orientação</option></select></label><label className="lead-fields__full"><span>Conte mais sobre o projeto (opcional)</span><textarea name="mensagem" rows={3} maxLength={4000} placeholder="Aplicação, requisitos, prazos..." /></label></div>
+      <div className="lead-fields"><label><span>Seu nome *</span><input name="nome" required minLength={2} placeholder="Nome e sobrenome" /></label><label><span>Empresa *</span><input name="empresa" required minLength={2} placeholder="Nome da empresa" /></label><label><span>E-mail corporativo *</span><input name="email" required type="email" placeholder="voce@empresa.com.br" /></label><label><span>Telefone (opcional)</span><TelefoneField error={telError} onInput={() => setTelError(null)} /></label><label><span>Volume estimado</span><select name="volume" defaultValue="Ainda estou avaliando"><option>Lote piloto ou pequenas quantidades</option><option>Produção recorrente em escala industrial</option><option>Ainda estou avaliando</option></select></label><label><span>Material da peça</span><select name="material" defaultValue="Preciso de orientação"><option>Já sei qual material preciso</option><option>Preciso de orientação</option></select></label><label className="lead-fields__full"><span>Conte mais sobre o projeto (opcional)</span><textarea name="mensagem" rows={3} maxLength={4000} placeholder="Aplicação, requisitos, prazos..." /></label></div>
       <label className="file-drop"><input type="file" name="anexo" accept=".pdf,.dwg,.dxf,.step,.stp,.jpg,.jpeg,.png" onChange={e => setFileName(e.target.files?.[0]?.name ?? "")} /><Upload size={19} /><span><b>{fileName || <>Anexar desenho, 3D ou referência <small>(opcional)</small></>}</b><small>PDF, DWG, DXF, STEP, JPG ou PNG · até 5 MB</small></span></label>
       <Consent>Autorizo a Wamovale a usar estes dados apenas para retorno comercial sobre este projeto.</Consent><Honeypot /><ErrorLine envio={envio} />
       <SubmitButton envio={envio} label="Enviar projeto para cotação" /><small className="form-privacy">Seus dados serão usados apenas para retorno comercial sobre este projeto.</small></form>}
@@ -176,13 +190,26 @@ function QuotePage() {
 function CareersPage() {
   const { envio, enviar, reset } = useEnvio();
   const [fileName, setFileName] = useState("");
+  const [telError, setTelError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
+    // N06: sem currículo ou telefone inválido → mensagem visível junto ao campo + aviso
+    const tel = telefoneError(text(form, "telefone"));
+    const file = form.get("curriculo") as File | null;
+    const missingFile = !file || file.size === 0 ? "Anexe o currículo (PDF, DOC ou DOCX, até 5 MB)." : null;
+    setTelError(tel);
+    setFileError(missingFile);
+    if (tel || missingFile) {
+      toast.error(missingFile ? "Selecione o currículo" : "Confira o telefone", { description: [missingFile, tel].filter(Boolean).join(" ") });
+      (formEl.querySelector(missingFile ? ".resume-upload" : 'input[name="telefone"]') as HTMLElement | null)?.scrollIntoView({ block: "center" });
+      return;
+    }
     try {
-      const anexo = await fileToAnexo(form.get("curriculo") as File | null);
-      if (!anexo) { toast.error("Selecione o currículo", { description: "Anexe um arquivo PDF, DOC ou DOCX." }); return; }
+      const anexo = await fileToAnexo(file);
+      if (!anexo) return;
       const ok = await enviar({ tipo: "Currículo", nome: text(form, "nome"), email: text(form, "email"), telefone: text(form, "telefone") || undefined, area: text(form, "area"), mensagem: text(form, "mensagem") || undefined, consentimento: true, website: text(form, "website") || undefined, anexo }, "Currículo enviado ao RH");
       if (ok) { formEl.reset(); setFileName(""); }
     } catch (error) {
@@ -195,10 +222,11 @@ function CareersPage() {
       <form className="career-form" aria-label="Enviar currículo" onSubmit={submit}>
         <label className="modal-field"><span>Nome completo *</span><input name="nome" required minLength={2} /></label>
         <label className="modal-field"><span>E-mail *</span><input name="email" type="email" required /></label>
-        <label className="modal-field"><span>Telefone (opcional)</span><input name="telefone" type="tel" /></label>
+        <label className="modal-field"><span>Telefone (opcional)</span><TelefoneField error={telError} onInput={() => setTelError(null)} /></label>
         <label className="modal-field"><span>Área de interesse *</span><select name="area" required defaultValue=""><option value="" disabled>Selecione</option><option>Produção / operação de injetoras</option><option>Ferramentaria e manutenção</option><option>Qualidade</option><option>Logística e almoxarifado</option><option>Administrativo e comercial</option><option>Outra</option></select></label>
         <label className="modal-field"><span>Mensagem (opcional)</span><textarea name="mensagem" rows={2} maxLength={4000} /></label>
-        <label className="resume-upload"><input type="file" name="curriculo" required accept=".pdf,.doc,.docx" onChange={e => setFileName(e.target.files?.[0]?.name ?? "")} /><Upload size={16} /><span>{fileName || "Selecionar currículo (PDF, DOC ou DOCX, até 5 MB)"}</span></label>
+        <label className={`resume-upload${fileError ? " resume-upload--error" : ""}`}><input type="file" name="curriculo" accept=".pdf,.doc,.docx" aria-label="Currículo (obrigatório)" aria-invalid={fileError ? true : undefined} aria-describedby={fileError ? "curriculo-erro" : undefined} onChange={e => { setFileName(e.target.files?.[0]?.name ?? ""); setFileError(null); }} /><Upload size={16} /><span>{fileName || "Selecionar currículo * (PDF, DOC ou DOCX, até 5 MB)"}</span></label>
+        <FieldError id="curriculo-erro" message={fileError} />
         <Consent>Autorizo a Wamovale a usar meus dados apenas para processos seletivos.</Consent><Honeypot /><ErrorLine envio={envio} />
         <SubmitButton envio={envio} label="Enviar para o RH" />
       </form>}
@@ -211,10 +239,14 @@ function CareersPage() {
 /** Formulário e canais de contato em /contato (B19). */
 function ContactSection() {
   const { envio, enviar, reset } = useEnvio();
+  const [telError, setTelError] = useState<string | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
+    const tel = telefoneError(text(form, "telefone"));
+    setTelError(tel);
+    if (tel) { toast.error("Confira o telefone", { description: tel }); return; }
     const ok = await enviar({ tipo: "Contato", nome: text(form, "nome"), empresa: text(form, "empresa") || undefined, email: text(form, "email"), telefone: text(form, "telefone") || undefined, assunto: text(form, "assunto"), mensagem: text(form, "mensagem"), consentimento: true, website: text(form, "website") || undefined }, "Mensagem enviada");
     if (ok) formEl.reset();
   };
@@ -233,7 +265,7 @@ function ContactSection() {
             <label><span>Nome *</span><input name="nome" required minLength={2} /></label>
             <label><span>Empresa (opcional)</span><input name="empresa" /></label>
             <label><span>E-mail *</span><input name="email" type="email" required /></label>
-            <label><span>Telefone (opcional)</span><input name="telefone" type="tel" /></label>
+            <label><span>Telefone (opcional)</span><TelefoneField error={telError} onInput={() => setTelError(null)} /></label>
             <label className="lead-fields__full"><span>Assunto *</span><select name="assunto" required defaultValue="Comercial"><option>Comercial</option><option>Produção recorrente</option><option>Suporte técnico</option><option>Fornecedor</option><option>Outro</option></select></label>
             <label className="lead-fields__full"><span>Mensagem *</span><textarea name="mensagem" required minLength={5} rows={4} maxLength={4000} /></label>
           </div>

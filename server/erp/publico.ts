@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { MODULES } from "@shared/erp/modules";
+import { TELEFONE_MENSAGEM, telefoneError } from "@shared/erp/contato";
 import type { DataRepository } from "./repository";
 import { audit } from "./audit";
 import { dataDir } from "./store";
@@ -17,13 +18,16 @@ const anexoSchema = z.object({
   base64: z.string().min(1),
 });
 
+// N06: telefone com formato validado (vazio = não informado)
+const telefoneSchema = z.string().trim().max(40).optional().refine(value => !telefoneError(value), { message: TELEFONE_MENSAGEM });
+
 export const solicitacaoSchema = z.discriminatedUnion("tipo", [
   z.object({
     tipo: z.literal("Cotação"),
     nome: z.string().trim().min(2, "Informe seu nome").max(120),
     empresa: z.string().trim().min(2, "Informe a empresa").max(160),
     email: z.string().trim().toLowerCase().email("E-mail inválido").max(200),
-    telefone: z.string().trim().max(40).optional(),
+    telefone: telefoneSchema,
     necessidade: z.string().trim().max(200),
     etapa: z.string().trim().max(200),
     volume: z.string().trim().max(200),
@@ -38,7 +42,7 @@ export const solicitacaoSchema = z.discriminatedUnion("tipo", [
     nome: z.string().trim().min(2, "Informe seu nome").max(120),
     empresa: z.string().trim().max(160).optional(),
     email: z.string().trim().toLowerCase().email("E-mail inválido").max(200),
-    telefone: z.string().trim().max(40).optional(),
+    telefone: telefoneSchema,
     assunto: z.string().trim().min(2, "Informe o assunto").max(200),
     mensagem: z.string().trim().min(5, "Escreva sua mensagem").max(4000),
     consentimento: z.literal(true, { message: "É preciso autorizar o uso dos dados para retorno." }),
@@ -48,7 +52,7 @@ export const solicitacaoSchema = z.discriminatedUnion("tipo", [
     tipo: z.literal("Currículo"),
     nome: z.string().trim().min(2, "Informe seu nome").max(120),
     email: z.string().trim().toLowerCase().email("E-mail inválido").max(200),
-    telefone: z.string().trim().max(40).optional(),
+    telefone: telefoneSchema,
     area: z.string().trim().min(2, "Informe a área de interesse").max(200),
     mensagem: z.string().trim().max(4000).optional(),
     consentimento: z.literal(true, { message: "É preciso autorizar o uso dos dados para o processo seletivo." }),
