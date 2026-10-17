@@ -137,7 +137,7 @@ export default function MeuPerfilPage() {
       <div className="profile-grid profile-grid--bottom">
         <section className="panel profile-history-panel" aria-label="Minha jornada">
           <div className="panel-heading"><div><span className="panel-kicker">Minha jornada</span><h2>Ponto e apontamentos</h2></div>
-            <select aria-label="Período do histórico" value={periodo} onChange={e => setPeriodo(e.target.value as typeof periodo)}><option value="mes">Este mês</option><option value="tudo">Todo o histórico</option></select>
+            <select className="select-button" aria-label="Período do histórico" value={periodo} onChange={e => setPeriodo(e.target.value as typeof periodo)}><option value="mes">Este mês</option><option value="tudo">Todo o histórico</option></select>
           </div>
           {resumo.isLoading ? <Spinner /> : visiveis.length === 0 ? <EmptyState><CalendarDays size={14} /> Nenhum registro {periodo === "mes" ? "neste mês" : "ainda"}.</EmptyState> : (
             <div className="profile-timeline">

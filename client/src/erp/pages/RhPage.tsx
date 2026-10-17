@@ -155,7 +155,7 @@ export default function RhPage() {
       <section className="panel rh-presence-panel" aria-label="Quadro de presença">
         <div className="panel-heading">
           <div><span className="panel-kicker">Hoje</span><h2>Quem está na fábrica</h2></div>
-          <select aria-label="Filtrar presença" value={estado} onChange={event => setEstado(event.target.value)}>
+          <select className="select-button" aria-label="Filtrar presença" value={estado} onChange={event => setEstado(event.target.value)}>
             <option value="">Todos</option>{["Presente", "Em intervalo", "Ausente", "Saiu", "Férias", "Afastado"].map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
@@ -166,7 +166,7 @@ export default function RhPage() {
                 <span className="presence-avatar">{initials(p.nome)}</span>
                 <div className="presence-person"><b>{p.nome} {p.demo ? <DemoBadge /> : null}</b><small>{p.matricula} · {p.cargo} · {p.setor}</small></div>
                 <span className="presence-time" title="Entrada">{p.entrada ? formatTime(p.entrada) : "—"}</span>
-                <span className="muted-cell">{p.ultimaOrigem ? <><MapPin size={11} /> {p.ultimaOrigem}</> : ""}</span>
+                <span className="muted-cell presence-origin">{p.ultimaOrigem ? <><MapPin size={11} /> {p.ultimaOrigem}</> : ""}</span>
                 <StatusPill label={p.estado} />
                 <button type="button" className="text-button" onClick={() => setHistorico(p.matricula)}>Histórico</button>
                 {canEdit && <button type="button" className="text-button" onClick={() => setPonto({ matricula: p.matricula })}>Ponto</button>}
