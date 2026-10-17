@@ -37,6 +37,7 @@ export function formatMoney(value: unknown): string {
 export function formatValue(field: FieldDef | undefined, column: string, value: unknown): string {
   if (column === "createdAt" || column === "updatedAt" || field?.type === "datetime") return formatDateTime(value);
   if (column === "progresso") return `${Number(value ?? 0)}%`;
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (!field) return value === undefined || value === null || value === "" ? "—" : String(value);
   switch (field.type) {
     case "date":

@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { Check, Clock3, Download, History, Loader2, MapPin, UserPlus, X } from "lucide-react";
+import { useState } from "react";
+import { Check, ClipboardList, Download, History, Loader2, MapPin, UserPlus, X } from "lucide-react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { MODULES } from "@shared/erp/modules";
 import { trpc } from "@/lib/trpc";
@@ -7,48 +8,25 @@ import { useSession } from "../session";
 import { downloadFile, errorMessage, toastError } from "../api";
 import { formatDate, formatDateTime, formatTime, initials, todayInput } from "../format";
 import { ModuleCrud, PageHeader } from "../components/ModuleCrud";
-import { RecordForm, invalidateModule, type RecordRow } from "../components/RecordForm";
+import { RecordForm, type RecordRow } from "../components/RecordForm";
 import { DemoBadge, EmptyState, Metric, Modal, Spinner, StatusPill } from "../components/ui";
 
-const TIPOS = ["Entrada", "Início de intervalo", "Fim de intervalo", "Saída"] as const;
-const ORIGENS = [
-  { value: "GPS", label: "GPS (simulado no MVP)" },
-  { value: "Rede local", label: "Rede local (simulada no MVP)" },
-  { value: "Manual", label: "Manual (lançado pelo RH)" },
-] as const;
-
-export function PontoModal({ matricula: initial, onClose }: { matricula?: string; onClose: () => void }) {
-  const utils = trpc.useUtils();
-  const registrar = trpc.rh.registrarPonto.useMutation();
-  const [matricula, setMatricula] = useState(initial ?? "");
-  const [tipo, setTipo] = useState<(typeof TIPOS)[number]>("Entrada");
-  const [origem, setOrigem] = useState<(typeof ORIGENS)[number]["value"]>("Rede local");
-  const [observacao, setObservacao] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    try {
-      const out = await registrar.mutateAsync({ matricula, tipo, origem, observacao: observacao || undefined });
-      utils.rh.invalidate();
-      invalidateModule(utils, "ponto");
-      toast.success("Ponto registrado", { description: `${String(out.nome)} · ${tipo} às ${formatTime(out.dataHora)} · ${origem}` });
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-      toast.error("Registro recusado", { description: errorMessage(err) });
-    }
-  };
+/**
+ * F0a/F0c (planos RH/Ponto v2 e v3): o ERP não registra ponto, nem em nome de outra pessoa (Portaria 671, art. 74).
+ * A origem oficial das marcações é o REP (relógio); correções viram ocorrência de ajuste (fluxo N07).
+ */
+export function AjustePontoModal({ onVerOcorrencias, onClose }: { onVerOcorrencias: () => void; onClose: () => void }) {
+  const [, navigate] = useLocation();
   return (
-    <Modal title="Registrar ponto" eyebrow="RH & ponto" icon={<Clock3 size={20} />} description="A data e a hora são as do servidor. A origem GPS/rede local ainda é simulada e fica marcada no registro." onClose={onClose}>
-      <form onSubmit={submit}>
-        <label className="modal-field"><span>Matrícula *</span><input required value={matricula} onChange={event => setMatricula(event.target.value)} placeholder="Ex.: MAT-0001" /></label>
-        <label className="modal-field"><span>Tipo *</span><select value={tipo} onChange={event => setTipo(event.target.value as typeof tipo)}>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></label>
-        <label className="modal-field"><span>Origem *</span><select value={origem} onChange={event => setOrigem(event.target.value as typeof origem)}>{ORIGENS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
-        <label className="modal-field"><span>Observação</span><input value={observacao} onChange={event => setObservacao(event.target.value)} /></label>
-        {error && <div className="erp-form-error" role="alert">{error}</div>}
-        <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancelar</button><button className="button button--primary" disabled={registrar.isPending}>{registrar.isPending && <Loader2 size={15} className="erp-spin" />}Registrar</button></div>
-      </form>
+    <Modal title="Registrar ocorrência de ajuste" eyebrow="RH & ponto" icon={<ClipboardList size={20} />} description="O ponto é registrado só no relógio oficial (REP). O ERP não registra marcações, nem em nome de outra pessoa; correções são feitas por ocorrência de ajuste." onClose={onClose}>
+      <div className="erp-history">
+        <p>Para corrigir uma marcação (esquecimento, batida fora de sequência, ajuste), o colaborador registra a ocorrência em <b>Meu perfil › Novo apontamento</b>. O RH analisa e decide com parecer em <b>Ocorrências dos colaboradores</b>, e a decisão fica na auditoria.</p>
+        <p className="erp-muted">A marcação original nunca é alterada nem apagada (Portaria 671, arts. 74 e 82).</p>
+      </div>
+      <div className="erp-modal-actions">
+        <button type="button" className="button button--secondary" onClick={() => { onClose(); navigate("/meu-perfil"); }}>Abrir Meu perfil</button>
+        <button type="button" className="button button--primary" onClick={() => { onClose(); onVerOcorrencias(); }}>Ver ocorrências para análise</button>
+      </div>
     </Modal>
   );
 }
@@ -62,8 +40,8 @@ function Historico({ matricula, onClose }: { matricula: string; onClose: () => v
           {h.data!.colaborador && <p className="erp-muted"><b>{String(h.data!.colaborador.nome)}</b> · {String(h.data!.colaborador.cargo)} · {String(h.data!.colaborador.setor)} · {String(h.data!.colaborador.turno)}</p>}
           <h3>Batidas de ponto ({h.data!.batidas.length})</h3>
           {h.data!.batidas.length === 0 ? <EmptyState>Nenhuma batida registrada.</EmptyState> : (
-            <table className="module-table erp-compact-table"><thead><tr><th>Data e hora</th><th>Tipo</th><th>Origem</th><th>Simulada</th></tr></thead><tbody>
-              {h.data!.batidas.map(b => <tr key={b.id}><td>{formatDateTime(b.dataHora)}</td><td>{String(b.tipo)}</td><td>{String(b.origem)}</td><td>{String(b.simulado)}</td></tr>)}
+            <table className="module-table erp-compact-table"><thead><tr><th>Data e hora</th><th>Tipo</th><th>Origem</th><th>Simulada</th><th>Validação</th></tr></thead><tbody>
+              {h.data!.batidas.map(b => <tr key={b.id}><td>{formatDateTime(b.dataHora)}</td><td>{String(b.tipo)}</td><td>{String(b.origem)}</td><td>{String(b.simulado)}</td><td title={b.divergencia ? String(b.divergencia) : undefined}>{b.foraDeSequencia ? "Divergente (fora de sequência)" : b.validacao ? String(b.validacao) : "—"}</td></tr>)}
             </tbody></table>
           )}
           <h3>Ocorrências ({h.data!.ocorrencias.length})</h3>
@@ -155,7 +133,7 @@ function OcorrenciasAnalise({ canEdit }: { canEdit: boolean }) {
   };
   const rows = list.data ?? [];
   return (
-    <section className="panel rh-ocorrencias-panel" aria-label="Ocorrências para análise">
+    <section id="rh-ocorrencias" className="panel rh-ocorrencias-panel" aria-label="Ocorrências para análise">
       <div className="panel-heading">
         <div><span className="panel-kicker">Análise do gestor</span><h2>Ocorrências dos colaboradores</h2></div>
         <select className="select-button" aria-label="Filtrar ocorrências" value={status} onChange={e => setStatus(e.target.value as typeof status)}>
@@ -190,7 +168,8 @@ export default function RhPage() {
   const { can } = useSession();
   const canEdit = can("rh", "editar");
   const presenca = trpc.rh.presenca.useQuery(undefined, { refetchInterval: 60_000 });
-  const [ponto, setPonto] = useState<{ matricula?: string } | null>(null);
+  const [ajuste, setAjuste] = useState(false);
+  const verOcorrencias = () => document.getElementById("rh-ocorrencias")?.scrollIntoView({ behavior: "smooth", block: "start" });
   const [novo, setNovo] = useState(false);
   const [historico, setHistorico] = useState<string | null>(null);
   const [estado, setEstado] = useState<string>("");
@@ -201,8 +180,8 @@ export default function RhPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Pessoas em movimento" title="RH & ponto" description="Presença em tempo real, batidas de ponto com origem, relatório exportável e histórico por colaborador."
-        actions={canEdit ? <><button type="button" className="button button--secondary" onClick={() => setPonto({})}><Clock3 size={16} /> Registrar ponto</button><button type="button" className="button button--primary" onClick={() => setNovo(true)}><UserPlus size={16} /> Novo colaborador</button></> : undefined} />
+      <PageHeader eyebrow="Pessoas em movimento" title="RH & ponto" description="Presença, marcações de ponto (somente leitura), relatório exportável e histórico por colaborador. O ponto é registrado no relógio oficial (REP)."
+        actions={canEdit ? <><button type="button" className="button button--secondary" onClick={() => setAjuste(true)}><ClipboardList size={16} /> Registrar ocorrência</button><button type="button" className="button button--primary" onClick={() => setNovo(true)}><UserPlus size={16} /> Novo colaborador</button></> : undefined} />
       <div className="metrics-grid rh-metrics">
         <Metric label="Presentes agora" value={t ? t.presentes : "…"} note={t ? `de ${t.escalados} escalados` : undefined} tone="teal" />
         <Metric label="Em intervalo" value={t ? t.intervalo : "…"} tone="orange" />
@@ -226,7 +205,6 @@ export default function RhPage() {
                 <span className="muted-cell presence-origin">{p.ultimaOrigem ? <><MapPin size={11} /> {p.ultimaOrigem}</> : ""}</span>
                 <StatusPill label={p.estado} />
                 <button type="button" className="text-button" onClick={() => setHistorico(p.matricula)}>Histórico</button>
-                {canEdit && <button type="button" className="text-button" onClick={() => setPonto({ matricula: p.matricula })}>Ponto</button>}
               </div>
             ))}
           </div>
@@ -237,10 +215,9 @@ export default function RhPage() {
       <Relatorio onHistorico={setHistorico} />
       <ModuleCrud mod={MODULES.colaboradores} embedded title="Colaboradores" extraActions={(row: RecordRow) => [
         { label: "Histórico", onSelect: () => setHistorico(String(row.matricula)), icon: <History size={14} /> },
-        ...(canEdit ? [{ label: "Registrar ponto", onSelect: () => setPonto({ matricula: String(row.matricula) }), icon: <Clock3 size={14} /> }] : []),
       ]} onCreate={() => setNovo(true)} />
-      <ModuleCrud mod={MODULES.ponto} embedded title="Registros de ponto" canCreateOverride={canEdit} createLabel="Registrar ponto" onCreate={() => setPonto({})} />
-      {ponto && <PontoModal matricula={ponto.matricula} onClose={() => setPonto(null)} />}
+      <ModuleCrud mod={MODULES.ponto} embedded title="Registros de ponto" canCreateOverride={false} />
+      {ajuste && <AjustePontoModal onVerOcorrencias={verOcorrencias} onClose={() => setAjuste(false)} />}
       {novo && <RecordForm mod={MODULES.colaboradores} onClose={() => setNovo(false)} />}
       {historico && <Historico matricula={historico} onClose={() => setHistorico(null)} />}
     </>

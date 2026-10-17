@@ -1,3 +1,4 @@
+import { ORIGENS_PONTO } from "./ponto";
 /**
  * Catálogo de módulos do InjetaFlow ERP compartilhado entre cliente e servidor.
  * Cada módulo define campos, colunas, busca, filtros e a chave de permissão.
@@ -341,11 +342,16 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "nome", label: "Colaborador", type: "text", readOnly: true },
       { name: "tipo", label: "Tipo", type: "select", options: ["Entrada", "Início de intervalo", "Fim de intervalo", "Saída"], required: true },
       { name: "dataHora", label: "Data e hora", type: "datetime", readOnly: true },
-      { name: "origem", label: "Origem", type: "select", options: ["GPS", "Rede local", "Manual"], required: true },
+      { name: "origem", label: "Origem", type: "select", options: [...ORIGENS_PONTO], required: true },
       { name: "simulado", label: "Origem simulada", type: "text", readOnly: true },
+      // F0a: batida fora de sequência é gravada e sinalizada (Portaria 671, arts. 74 e 98), nunca recusada
+      { name: "foraDeSequencia", label: "Fora de sequência", type: "text", readOnly: true }, // P7-06: booleano, exibido como Sim/Não
+      { name: "validacao", label: "Validação", type: "text", readOnly: true },
+      { name: "divergencia", label: "Divergência", type: "text", readOnly: true },
       { name: "observacao", label: "Observação", type: "textarea" },
     ],
-    columns: ["dataHora", "matricula", "nome", "tipo", "origem", "simulado"],
+    // P7-06: a Validação (OK/DIVERGENTE) aparece na tabela "Registros de ponto", não só no Histórico
+    columns: ["dataHora", "matricula", "nome", "tipo", "origem", "simulado", "validacao"],
     searchFields: ["matricula", "nome"],
     filterFields: ["tipo", "origem"],
     allowCreate: false,

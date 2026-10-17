@@ -1,19 +1,27 @@
 import { TRPCError } from "@trpc/server";
 import type { DataRepository, StoredRecord } from "./repository";
-import type { SessionUser } from "./types";
-import { actorOf, audit } from "./audit";
 import { toCsv } from "./csv";
-import { flatten, findByMatricula, type RecordData } from "./records";
+import { flatten, PONTO_SO_NO_RELOGIO, type RecordData } from "./records";
 import { localDateOf, normalizeText, todayIso } from "./text";
 
 export const TIPOS_PONTO = ["Entrada", "Início de intervalo", "Fim de intervalo", "Saída"] as const;
 export type TipoPonto = (typeof TIPOS_PONTO)[number];
-export const ORIGENS_PONTO = ["GPS", "Rede local", "Manual"] as const;
-export type OrigemPonto = (typeof ORIGENS_PONTO)[number];
+export { ORIGENS_PONTO, type OrigemPonto } from "@shared/erp/ponto";
+
+/**
+ * F0c (plano RH/Ponto v3, §7): o ERP não registra ponto. A marcação oficial é feita só no relógio (REP) e
+ * chega ao ERP pela rede ou por AFD (pendrive). Não há função de gravação de ponto aqui: o único gravador
+ * é `registrarPontoDemonstracao` (server/erp/ponto-demonstracao.ts), restrito ao seed e aos testes (P7-05).
+ */
+export { PONTO_SO_NO_RELOGIO };
 
 export type EstadoPresenca = "Presente" | "Em intervalo" | "Saiu" | "Ausente" | "Férias" | "Afastado";
 
-/** Próximo estado permitido a partir da última batida do dia. */
+/**
+ * Próximo tipo esperado a partir da última batida do dia.
+ * F0a (plano RH/Ponto v2, §2.2-c): é só **sugestão de UI**. A Portaria 671 (arts. 74 e 98) proíbe
+ * bloqueio na marcação, então uma batida fora desta sequência é gravada e sinalizada, nunca recusada.
+ */
 export function nextAllowed(last: TipoPonto | null): TipoPonto[] {
   switch (last) {
     case null:
@@ -36,41 +44,22 @@ export function stateFromLast(last: TipoPonto | null): EstadoPresenca {
   return "Ausente";
 }
 
-async function eventsOf(repo: DataRepository, empresaId: string, filter: (data: RecordData) => boolean) {
-  const { items } = await repo.list<RecordData>("ponto", empresaId, { filter, sort: (a, b) => String(a.data.dataHora).localeCompare(String(b.data.dataHora)) });
-  return items;
+export type AvaliacaoSequencia = { foraDeSequencia: boolean; esperado: TipoPonto[]; divergencia?: string };
+
+/** Avalia a batida contra a sequência esperada do dia. Função pura: não recusa nada, só descreve a divergência. */
+export function avaliarSequencia(last: TipoPonto | null, tipo: TipoPonto): AvaliacaoSequencia {
+  const esperado = nextAllowed(last);
+  if (esperado.includes(tipo)) return { foraDeSequencia: false, esperado };
+  return {
+    foraDeSequencia: true,
+    esperado,
+    divergencia: `Fora de sequência: após "${last ?? "nenhuma batida"}" o esperado era ${esperado.join(" ou ")}. Registrado para tratamento pelo RH.`,
+  };
 }
 
-export async function registrarPonto(
-  repo: DataRepository,
-  user: SessionUser,
-  input: { matricula: string; tipo: TipoPonto; origem: OrigemPonto; observacao?: string; now?: Date; demo?: boolean }
-) {
-  const matricula = input.matricula.trim().toUpperCase();
-  const pessoa = await findByMatricula(repo, user.empresaId, matricula);
-  if (!pessoa) throw new TRPCError({ code: "BAD_REQUEST", message: `Matrícula "${matricula}" não encontrada ou inativa.` });
-  const now = input.now ?? new Date();
-  const day = todayIso(now);
-  const today = await eventsOf(repo, user.empresaId, data => normalizeText(data.matricula) === normalizeText(matricula) && localDateOf(String(data.dataHora)) === day);
-  const last = (today.at(-1)?.data.tipo as TipoPonto | undefined) ?? null;
-  const allowed = nextAllowed(last);
-  if (!allowed.includes(input.tipo)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Batida fora de sequência: após "${last ?? "nenhuma batida"}" o próximo registro deve ser ${allowed.join(" ou ")}.` });
-  }
-  // A captura real de GPS/rede local ainda não existe no MVP: a origem é declarada e marcada como simulada.
-  const simulado = input.origem === "Manual" ? "não (manual)" : "sim";
-  const record = await repo.insert<RecordData>("ponto", user.empresaId, {
-    matricula,
-    nome: pessoa.nome,
-    tipo: input.tipo,
-    origem: input.origem,
-    simulado,
-    dataHora: now.toISOString(),
-    observacao: input.observacao?.trim() || undefined,
-    registradoPor: user.nome,
-  }, { actor: actorOf(user), demo: input.demo });
-  await audit(repo, user.empresaId, user, { acao: "ponto", modulo: "rh", registroId: record.id, resumo: `${input.tipo} de ${pessoa.nome} (${matricula}) · ${input.origem}` });
-  return flatten(record);
+export async function eventsOf(repo: DataRepository, empresaId: string, filter: (data: RecordData) => boolean) {
+  const { items } = await repo.list<RecordData>("ponto", empresaId, { filter, sort: (a, b) => String(a.data.dataHora).localeCompare(String(b.data.dataHora)) });
+  return items;
 }
 
 export async function presenca(repo: DataRepository, empresaId: string, date = todayIso()) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setup } from "./helpers";
+import { registrarPontoDemonstracao } from "../ponto-demonstracao";
 
 async function seedItem(caller: Awaited<ReturnType<typeof setup>>["admin"]["caller"], codigo = "RES-PP-01", saldo = 5000) {
   await caller.records.create({ module: "estoque", data: { codigo, material: "PP", categoria: "Resina", saldo, unidade: "kg", estoqueMinimo: 100, status: "Normal" } });
@@ -72,9 +73,9 @@ describe("N02: excluir/editar movimentação recalcula o saldo, com auditoria", 
 
 describe("N11: marcação de ponto não pode ser excluída nem editada", () => {
   it("excluir/editar ponto → FORBIDDEN com orientação de ocorrência", async () => {
-    const { admin } = await setup();
+    const { repo, admin } = await setup();
     await admin.caller.records.create({ module: "colaboradores", data: { matricula: "MAT-9", nome: "Pessoa", cargo: "Op", setor: "Produção", turno: "1º turno (06–14)", status: "Ativo" } });
-    await admin.caller.rh.registrarPonto({ matricula: "MAT-9", tipo: "Entrada", origem: "Manual" });
+    await registrarPontoDemonstracao(repo, (await admin.caller.auth.me())!, { matricula: "MAT-9", tipo: "Entrada", demo: true });
     const list = await admin.caller.records.list({ module: "ponto" });
     const id = list.items[0].id;
     await expect(admin.caller.records.remove({ module: "ponto", id })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/Portaria 671/) });
