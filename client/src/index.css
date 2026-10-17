@@ -419,3 +419,15 @@ tbody td { height: 53px; padding: 8px 10px; border-top: 1px solid #f0f2f4; color
 .institutional-hero .institutional-intro h1 { font-size: clamp(38px, 5vw, 64px); }
 .institutional-grid { max-width: none; }
 @media (max-width: 900px) { .institutional-main { padding: 34px 20px 70px; }.institutional-hero { display: block; margin-bottom: 35px; }.institutional-visual { margin-top: 32px; min-height: 260px; }.institutional-visual img { height: 280px; } }
+
+/* Segmentos atendidos: aproxima a experiência industrial dos mercados reais. */
+.portal-segments { max-width: 1172px; margin: 0 auto; padding: 0 34px 70px; }
+.portal-segments__heading { display: grid; grid-template-columns: .8fr 1.2fr; align-items: end; gap: 24px; margin-bottom: 24px; }
+.portal-segments__heading h2 { margin: 0; color: #242426; font-size: clamp(25px, 3vw, 39px); line-height: 1; letter-spacing: -.065em; }
+.portal-segments__heading p { max-width: 300px; margin: 0; color: #87878a; font-size: 11px; line-height: 1.55; }
+.portal-segment-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.portal-segment-grid article { min-height: 115px; padding: 18px; border: 1px solid #e9e5e0; border-radius: 12px; background: linear-gradient(135deg, #fff 0%, #fffaf4 100%); }
+.portal-segment-grid b { display: block; margin-bottom: 8px; color: #2b2b2d; font-size: 12px; }
+.portal-segment-grid small { display: block; color: #858589; font-size: 10px; line-height: 1.55; }
+@media (max-width: 900px) { .portal-segments__heading { grid-template-columns: 1fr; gap: 11px; }.portal-segment-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .portal-segments { padding: 0 22px 48px; }.portal-segment-grid { grid-template-columns: 1fr; } }
