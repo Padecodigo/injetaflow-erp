@@ -39,3 +39,14 @@ Planeje antes de codificar. Faça a menor mudança vertical que entregue valor. 
 
 ## Proibições
 Não inventar regra fiscal, sanitária ou de qualidade sem marcar `PENDENTE DE VALIDAÇÃO`. Não permitir apontamento sem identificação. Não expor dados financeiros ou configurações administrativas a usuários públicos. Não fazer migração destrutiva sem rollback. Não tratar aprovação de qualidade como simples mudança de status sem responsável e evidência.
+
+## Cursor Cloud specific instructions
+
+O app que sobe hoje é o protótipo React/Express/tRPC, não o Next.js/Supabase da arquitetura-alvo. `pnpm dev` serve interface e API no mesmo processo, em `0.0.0.0:3000`. `supabase/migrations` é SQL de referência; o build não lê `NEXT_PUBLIC_SUPABASE_*`.
+
+- Instalar com o pnpm pinado em `packageManager`: `corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack prepare pnpm@10.18.0 --activate && pnpm install --frozen-lockfile`.
+- Verificação: `pnpm check`, `pnpm test` e `pnpm build`. Não há script de lint.
+- Saúde: `GET /api/health` devolve `{"status":"ok"}`.
+- `DATABASE_URL` (MySQL) só é exigido por `pnpm db:migrate` e `pnpm db:push`. O servidor e a interface sobem sem banco.
+- O aviso de log `MANUS_OAUTH_API_URL is not configured` não bloqueia o protótipo. O login de demonstração é local na interface e já aparece em `/erp`: `admin@wamovale.com.br` / `adm123`.
+- A ação rastreada de demonstração é o botão "Nova ordem", que pede um número de registro (exemplo `REG-00482`) e confirma com o toast "Apontamento autorizado".
