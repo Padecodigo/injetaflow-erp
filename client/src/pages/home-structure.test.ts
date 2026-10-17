@@ -12,7 +12,7 @@ describe("portal home structure", () => {
     expect(technicalHero).toBeGreaterThan(headerEnd);
     expect(source).toContain("Projetos e engenharia");
     expect(source).toContain('<Link href="/moldes-e-ferramentaria">Projetos e engenharia</Link>');
-    const homeHeader = source.slice(source.indexOf("function PublicPortal"), source.indexOf("function ErpEntryPage"));
+    const homeHeader = source.slice(source.indexOf("function PublicPortal"), source.indexOf("const HR_EMAIL"));
     expect(homeHeader).not.toContain('<Link href="/contato">Contato</Link>');
     expect(source).toContain("Aeronáutico");
     expect(source).toContain("Automotivo");
