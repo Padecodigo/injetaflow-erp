@@ -75,8 +75,10 @@ export type FieldDef = {
   readOnly?: boolean;
   /** Campo opcional apenas na edição. */
   hiddenOnCreate?: boolean;
+  /** Campos numéricos: mínimo (padrão 0, nunca negativo), máximo e se aceita só inteiros. */
   min?: number;
   max?: number;
+  integer?: boolean;
 };
 
 export type ModuleDef = {
@@ -133,7 +135,7 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "produto", label: "Produto", type: "text", required: true, placeholder: "Ex.: Tampa flip-top 28mm" },
       { name: "molde", label: "Molde", type: "ref", required: true, ref: { module: "moldes", field: "codigo", labelField: "descricao" } },
       { name: "maquina", label: "Máquina", type: "text", required: true, placeholder: "Ex.: INJ-07 · 180T" },
-      { name: "quantidade", label: "Quantidade planejada", type: "number", required: true, min: 1 },
+      { name: "quantidade", label: "Quantidade planejada", type: "number", required: true, min: 1 , integer: true },
       { name: "prioridade", label: "Prioridade", type: "select", options: PRIORIDADES, required: true },
       { name: "status", label: "Status", type: "select", options: ["Planejada", "Liberada", "Em produção", "Pausada", "Concluída", "Cancelada"], required: true },
       { name: "entrega", label: "Entrega prevista", type: "date", required: true },
@@ -155,8 +157,8 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "ordem", label: "Ordem de produção", type: "ref", required: true, ref: { module: "ordens", field: "codigo", labelField: "produto" } },
       { name: "matricula", label: "Matrícula do operador", type: "text", required: true, placeholder: "Ex.: MAT-0001" },
       { name: "operador", label: "Operador", type: "text", readOnly: true },
-      { name: "quantidadeBoa", label: "Peças boas", type: "number", required: true, min: 0 },
-      { name: "refugo", label: "Refugo (peças)", type: "number", min: 0 },
+      { name: "quantidadeBoa", label: "Peças boas", type: "number", required: true, min: 0 , integer: true },
+      { name: "refugo", label: "Refugo (peças)", type: "number", min: 0 , integer: true },
       { name: "turno", label: "Turno", type: "select", options: ["1º turno", "2º turno", "3º turno"], required: true },
       { name: "observacoes", label: "Observações", type: "textarea" },
     ],
@@ -177,7 +179,7 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "produto", label: "Produto / material", type: "text", required: true },
       { name: "responsavel", label: "Responsável", type: "text" },
       { name: "severidade", label: "Severidade", type: "select", options: ["Baixa", "Média", "Alta", "Crítica"], required: true },
-      { name: "status", label: "Status", type: "select", options: ["Aberto", "Em análise", "Quarentena", "Aprovado", "Reprovado", "Encerrado"], required: true },
+      { name: "status", label: "Status", type: "select", options: ["Aberto", "Em análise", "Quarentena", "Aprovado", "Liberado", "Reprovado", "Encerrado"], required: true },
       { name: "descricao", label: "Descrição e evidências", type: "textarea", required: true },
     ],
     columns: ["codigo", "tipo", "loteOrdem", "produto", "responsavel", "severidade", "status", "createdAt"],
@@ -236,9 +238,9 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "codigo", label: "Código do molde", type: "text", required: true, placeholder: "Ex.: M-0001" },
       { name: "descricao", label: "Descrição", type: "text", required: true },
       { name: "produto", label: "Produto", type: "text" },
-      { name: "cavidades", label: "Cavidades", type: "number", required: true, min: 1 },
-      { name: "cavidadesAtivas", label: "Cavidades ativas", type: "number", min: 0 },
-      { name: "ciclos", label: "Ciclos acumulados", type: "number", min: 0 },
+      { name: "cavidades", label: "Cavidades", type: "number", required: true, min: 1 , integer: true },
+      { name: "cavidadesAtivas", label: "Cavidades ativas", type: "number", min: 0 , integer: true },
+      { name: "ciclos", label: "Ciclos acumulados", type: "number", min: 0 , integer: true },
       { name: "maquina", label: "Máquina compatível", type: "text" },
       { name: "ultimaManutencao", label: "Última manutenção", type: "date" },
       { name: "proximaAcao", label: "Próxima ação", type: "text" },

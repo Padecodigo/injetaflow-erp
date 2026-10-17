@@ -28,27 +28,32 @@ export type ListQuery = {
   sortDir?: "asc" | "desc";
 };
 
+import { numericError, parseNumeric } from "@shared/erp/numbers";
+
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 function fieldSchema(field: FieldDef): z.ZodTypeAny {
+  const required = { message: `${field.label}: obrigatório.` };
   switch (field.type) {
     case "number":
     case "money": {
-      let schema = z.coerce.number({ message: `${field.label}: informe um número` }).refine(Number.isFinite, `${field.label}: número inválido`);
-      if (field.min !== undefined) schema = schema.refine(v => v >= field.min!, `${field.label}: mínimo ${field.min}`);
-      if (field.max !== undefined) schema = schema.refine(v => v <= field.max!, `${field.label}: máximo ${field.max}`);
-      return schema;
+      // aceita só números (B-NUM): texto como "12abc", vazio ou negativo é recusado com mensagem clara
+      const rule = { label: field.label, integer: field.integer, min: field.min, max: field.max };
+      return z.union([z.string(), z.number()], { message: `${field.label}: obrigatório (informe um número).` }).superRefine((value, ctx) => {
+        const error = value === "" ? `${field.label}: obrigatório (informe um número).` : numericError(value, rule);
+        if (error) ctx.addIssue({ code: "custom", message: error });
+      }).transform(value => parseNumeric(value) as number);
     }
     case "date":
-      return z.string().regex(dateRegex, `${field.label}: data inválida (AAAA-MM-DD)`);
+      return z.string(required).regex(dateRegex, `${field.label}: data inválida (AAAA-MM-DD)`);
     case "email":
-      return z.string().trim().toLowerCase().email(`${field.label}: e-mail inválido`).max(200);
+      return z.string(required).trim().toLowerCase().email(`${field.label}: e-mail inválido`).max(200);
     case "select":
-      return z.enum(field.options as [string, ...string[]], { message: `${field.label}: opção inválida` });
+      return z.enum(field.options as [string, ...string[]], { error: issue => (issue.input === undefined || issue.input === "" ? `${field.label}: obrigatório.` : `${field.label}: opção inválida.`) });
     case "textarea":
-      return z.string().trim().max(4000, `${field.label}: texto muito longo`);
+      return z.string(required).trim().max(4000, `${field.label}: texto muito longo`);
     default:
-      return z.string().trim().max(300, `${field.label}: texto muito longo`);
+      return z.string(required).trim().max(300, `${field.label}: texto muito longo`);
   }
 }
 
