@@ -4,7 +4,7 @@ import { MODULES, columnLabel, type FieldDef, type ModuleDef, type ModuleKey } f
 import type { DataRepository, StoredRecord } from "./repository";
 import type { SessionUser, UserData } from "./types";
 import { actorOf, audit } from "./audit";
-import { toCsv } from "./csv";
+import { formatCsvDate, toCsv } from "./csv";
 import { normalizeText } from "./text";
 
 export type RecordData = Record<string, unknown>;
@@ -460,9 +460,7 @@ export async function summarize(repo: DataRepository, empresaId: string, moduleK
 
 function formatCell(field: string, value: unknown): string | number {
   if (value === null || value === undefined) return "";
-  if (field === "createdAt" || field === "updatedAt" || field === "dataHora") {
-    return new Date(String(value)).toLocaleString("pt-BR", { timeZone: process.env.TZ || "America/Sao_Paulo" });
-  }
+  if (field === "createdAt" || field === "updatedAt" || field === "dataHora") return formatCsvDate(String(value));
   if (typeof value === "number") return String(value).replace(".", ",");
   return String(value);
 }

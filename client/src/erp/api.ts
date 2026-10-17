@@ -5,7 +5,8 @@ import { toast } from "sonner";
 export function errorMessage(error: unknown): string {
   if (error instanceof TRPCClientError) {
     const code = (error.data as { code?: string } | undefined)?.code;
-    if (code === "FORBIDDEN") return "Seu perfil não tem permissão para esta ação.";
+    // N12: mensagens específicas do servidor (ex.: "Usuário inativo...") não podem ser trocadas pela genérica
+    if (code === "FORBIDDEN") return error.message || "Seu perfil não tem permissão para esta ação.";
     if (code === "UNAUTHORIZED") return error.message || "Sessão expirada. Entre novamente.";
     try {
       const parsed = JSON.parse(error.message) as { message?: string }[];

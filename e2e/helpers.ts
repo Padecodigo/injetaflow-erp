@@ -34,7 +34,8 @@ export async function fillRecordForm(dialog: Locator, tag: string, overrides: Re
     const control = controls.nth(i);
     const name = (await control.getAttribute("name"))!;
     const tagName = await control.evaluate(el => el.tagName.toLowerCase());
-    const type = (await control.getAttribute("type")) ?? "";
+    // campos numéricos são type=text + inputmode (N04/N10); identificados por data-numeric
+    const type = (await control.getAttribute("data-numeric")) ? "number" : (await control.getAttribute("type")) ?? "";
     const override = overrides[name];
     if (tagName === "select") {
       await expect(control).toBeEnabled();

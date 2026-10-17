@@ -149,7 +149,9 @@ export const recordsRouter = router({
       }));
       // N13: quem digita o prefixo do código (SOL-, OP-...) vê esse módulo primeiro
       const prefixo = mod.autoCode ? normalizeText(mod.autoCode.prefix.replace(/-$/, "")) : null;
-      if (hits.length) (prefixo && termo.startsWith(prefixo) ? grupos.unshift(hits) : grupos.push(hits));
+      if (!hits.length) continue;
+      if (prefixo && termo.startsWith(prefixo)) grupos.unshift(hits);
+      else grupos.push(hits);
     }
     if (hasPermission(ctx.user, "usuarios", "ver")) {
       const users = await listUsers(ctx.repo, ctx.user.empresaId, { search: input.q, pageSize: 5 });

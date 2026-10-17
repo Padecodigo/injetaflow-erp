@@ -1,4 +1,4 @@
-import type { Express, Request } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 
 /**
  * N01: o IP usado em bloqueio de login e limite do portal NUNCA vem de cabeçalho
@@ -26,4 +26,17 @@ export function clientIp(req: ReqLike): string {
   const trusted = typeof req.app?.get === "function" && Boolean(req.app.get("trust proxy"));
   const ip = trusted ? req.ip : req.socket?.remoteAddress;
   return (ip || req.socket?.remoteAddress || "local").toString();
+}
+
+
+/**
+ * N16: "/dashboard/" → 301 para "/dashboard" (mantém a query). Não mexe em /api nem na raiz.
+ * Barras iniciais repetidas são normalizadas para evitar redirecionamento aberto ("//site.com/").
+ */
+export function trailingSlashRedirect(req: Request, res: Response, next: NextFunction) {
+  if ((req.method !== "GET" && req.method !== "HEAD") || req.path.length <= 1 || !req.path.endsWith("/") || req.path.startsWith("/api/")) return next();
+  const target = req.path.replace(/\/+$/, "").replace(/^\/+/, "/") || "/";
+  const queryIndex = req.originalUrl.indexOf("?");
+  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
+  res.redirect(301, target + query);
 }

@@ -122,3 +122,13 @@ describe("regressões do frontend (aceite PR #1)", () => {
     }
   });
 });
+
+describe("N12 — mensagem de usuário inativo chega à tela de login", () => {
+  it("N12: FORBIDDEN com mensagem específica não é trocado pela genérica", async () => {
+    const { TRPCClientError } = await import("@trpc/client");
+    const { errorMessage } = await import("../api");
+    const err = new TRPCClientError("Usuário inativo. Fale com o administrador para reativar o acesso.", { result: { error: { message: "x", code: -32003, data: { code: "FORBIDDEN" } } } } as never);
+    expect((err.data as { code?: string } | undefined)?.code).toBe("FORBIDDEN");
+    expect(errorMessage(err)).toBe("Usuário inativo. Fale com o administrador para reativar o acesso.");
+  });
+});

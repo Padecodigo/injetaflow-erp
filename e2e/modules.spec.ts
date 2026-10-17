@@ -132,3 +132,10 @@ test("N09: filtros usam plural correto", async ({ page }) => {
   await expect(page.getByRole("combobox", { name: "Filtrar por Status" }).locator("option").first()).toHaveText("Todos os status");
   await expect(page.locator("body")).not.toContainText(/statuss|situaçãos/);
 });
+
+test("N16: /dashboard/ com barra final redireciona para /dashboard", async ({ page }) => {
+  await login(page);
+  const response = await page.goto("/dashboard/");
+  expect(new URL(page.url()).pathname).toBe("/dashboard");
+  expect(response?.request().redirectedFrom()?.url()).toMatch(/\/dashboard\/$/);
+});

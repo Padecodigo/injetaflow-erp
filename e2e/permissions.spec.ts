@@ -39,4 +39,30 @@ test.describe("B10/B24: permissões por perfil", () => {
     await page.goto("/usuarios");
     await expect(page.getByTestId("forbidden")).toBeVisible();
   });
+
+  test("N12: usuário inativo vê 'Usuário inativo' no login (não 'senha inválida')", async ({ page }) => {
+    await login(page);
+    await page.goto("/usuarios");
+    await page.getByRole("button", { name: "Novo usuário" }).click();
+    const dialog = page.getByRole("dialog");
+    const email = `inativo-${Date.now()}@teste.local`;
+    await dialog.locator('input[name="nome"]').fill("Inativo E2E");
+    await dialog.locator('input[name="email"]').fill(email);
+    await dialog.locator('input[name="matricula"]').fill(`I-${Date.now() % 100000}`);
+    await dialog.locator('select[name="perfil"]').selectOption("Consulta");
+    await dialog.locator('input[name="senha"]').fill("Senha-Inativo-1");
+    await dialog.getByRole("button", { name: "Cadastrar usuário" }).click();
+    const row = page.getByTestId("user-row").filter({ hasText: email });
+    await row.getByRole("button", { name: "Ações de Inativo E2E" }).click();
+    await page.getByRole("menuitem", { name: "Desativar" }).click();
+    await expect(row).toContainText("Inativo");
+
+    await page.context().clearCookies();
+    await page.goto("/erp");
+    await page.getByRole("textbox", { name: /E-mail/ }).fill(email);
+    await page.getByLabel("Senha").fill("Senha-Inativo-1");
+    await page.getByRole("button", { name: /Entrar/ }).click();
+    await expect(page.getByText(/Usuário inativo\. Fale com o administrador/).first()).toBeVisible();
+    await expect(page.getByText(/E-mail ou senha inválidos/)).toHaveCount(0);
+  });
 });
