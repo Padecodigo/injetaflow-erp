@@ -41,6 +41,7 @@ Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o se
 - **Regras contra escalada de privilégio** (valem no servidor, em criar, editar e excluir; a tela só reflete):
   - só o Administrador cria, edita, desativa ou exclui administradores e atribui o perfil Administrador (para os demais, a opção nem aparece e as ações na linha do admin ficam desabilitadas);
   - quem não é administrador e tem "Usuários: editar" não altera matrícula e só concede módulos que ele próprio possui, no mesmo nível ("ver" se ele só vê); módulos que a pessoa já tinha continuam;
+  - quem não é administrador só altera senha, e-mail, nome de usuário e status, ou exclui, quem tem permissões dentro das dele (mesmo nível ou menor). Para quem tem acesso além do seu, essas ações ficam desabilitadas na tela e o servidor recusa, para que ninguém assuma a conta de quem tem mais acesso. Dados como nome e setor continuam editáveis;
   - ninguém altera o próprio perfil, módulos ou status, nem o administrador (peça a outro administrador); ninguém exclui o próprio usuário;
   - a empresa nunca fica sem administrador ativo: o último não pode ser excluído, desativado nem rebaixado.
 - Na auditoria, ações sem sessão aparecem com o autor certo: **Sistema (migração)**, **Sistema (inicialização)** (1º start) e **Linha de comando** (scripts).
@@ -67,7 +68,7 @@ unset INJETAFLOW_ADMIN_PASSWORD
 A exclusão é lógica (nada é apagado). Para trazer de volta alguém excluído por engano, inclusive um administrador, pare o `pnpm dev` e rode:
 
 ```bash
-pnpm erp:restaurar-usuario --listar          # mostra os excluídos (id, e-mail, usuário, matrícula, quando e por quem)
+pnpm erp:restaurar-usuario --listar          # mostra os excluídos (id, e-mail, usuário, matrícula, quando, em horário de Brasília, e por quem)
 pnpm erp:restaurar-usuario ADM-0001          # restaura por e-mail, nome de usuário, matrícula ou id
 ```
 

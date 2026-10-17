@@ -96,7 +96,7 @@ describe("P6-02 / P6-06: autor 'Linha de comando' e pnpm erp:restaurar-usuario",
     const adm = await repo.insert<UserData>(USERS, "wamovale", { nome: "Administrador Wamovale", email: "adm@wamovale.local", username: "admin", senhaHash: hashPassword(generatePassword(12)), setor: "Administrativo", perfil: "Administrador", matricula: "ADM-0001", permissoes: {}, status: "Ativo", ultimoAcesso: null });
     await repo.softDelete(USERS, "wamovale", adm.id, { id: "x", nome: "Gestora", matricula: null });
     expect(() => run(dir, ["admin"], { INJETAFLOW_ADMIN_PASSWORD: generatePassword(8) })).toThrow(/erp:restaurar-usuario/);
-    expect(run(dir, ["--listar"], {}, "tools/restaurar-usuario.ts")).toMatch(/Administrador Wamovale .*matrícula ADM-0001/);
+    expect(run(dir, ["--listar"], {}, "tools/restaurar-usuario.ts")).toMatch(/Administrador Wamovale .*matrícula ADM-0001 · excluído em \d{2}\/\d{2}\/\d{4}, \d{2}:\d{2} \(horário de Brasília\)/);
     const out = run(dir, ["adm-0001"], {}, "tools/restaurar-usuario.ts");
     expect(out).toMatch(/Usuário restaurado: Administrador Wamovale/);
     const depois = ler(dir);

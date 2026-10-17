@@ -15,7 +15,7 @@
 import "dotenv/config";
 import { getRepository, DEFAULT_EMPRESA_ID } from "../server/erp/store";
 import { AUTOR_CLI } from "../server/erp/audit";
-import { listDeletedUsers, migrateUsernames, restoreUser } from "../server/erp/users";
+import { formatBrasilia, listDeletedUsers, migrateUsernames, restoreUser } from "../server/erp/users";
 
 export function parseRestoreArgs(argv: string[]) {
   let identificador: string | undefined;
@@ -42,12 +42,13 @@ async function main() {
       return;
     }
     console.log(`Usuários excluídos em ${empresaId}:`);
-    for (const u of excluidos) console.log(`  ${u.id} · ${u.data.nome} (${u.data.perfil}) · ${u.data.email} · usuário "${u.data.username ?? ""}" · matrícula ${u.data.matricula} · excluído em ${u.deletedAt} por ${u.deletedBy?.nome ?? "?"}`);
+    for (const u of excluidos) console.log(`  ${u.id} · ${u.data.nome} (${u.data.perfil}) · ${u.data.email} · ${u.data.username ? `usuário "${u.data.username}"` : "sem nome de usuário"} · matrícula ${u.data.matricula} · excluído em ${formatBrasilia(u.deletedAt)} por ${u.deletedBy?.nome ?? "?"}`);
     return;
   }
   const out = await restoreUser(repo, empresaId, args.identificador!, { autor: AUTOR_CLI });
   console.log(`Usuário restaurado: ${out.user.nome} (${out.user.perfil}) · e-mail ${out.user.email} · usuário "${out.user.username}" · matrícula ${out.user.matricula} · status ${out.user.status}.`);
-  if (out.usernameTrocado) console.log(`O nome de usuário anterior estava em uso; o novo é "${out.user.username}".`);
+  if (out.usernameMotivo === "em uso") console.log(`O nome de usuário anterior ("${out.usernameAnterior}") estava em uso; o novo é "${out.user.username}".`);
+  else if (out.usernameMotivo === "vazio") console.log(`O usuário não tinha nome de usuário; recebeu "${out.user.username}" (derivado do e-mail).`);
   console.log("A senha anterior foi mantida. Para trocá-la: pnpm erp:reset-senha " + out.user.matricula);
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Download, KeyRound, Loader2, Pencil, Search, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
 import { toast } from "sonner";
-import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, type Perfil, type Permissions } from "@shared/erp/modules";
+import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, permissionsBeyond, type Perfil, type Permissions } from "@shared/erp/modules";
 import { PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "@shared/erp/account";
 import { trpc } from "@/lib/trpc";
 import { useSession, type SessionUser } from "../session";
@@ -11,6 +11,14 @@ import { PageHeader } from "../components/ModuleCrud";
 import { ConfirmModal, DemoBadge, EmptyState, Modal, Pagination, RowMenu, Spinner, StatusPill, useDebounced } from "../components/ui";
 
 type UserRow = SessionUser & { createdAt?: string; demo?: boolean };
+
+const USUARIOS_TOAST = "usuarios-acao";
+
+/** R-01: módulos do alvo além dos de quem está logado (vazio para o admin ou para a própria linha). */
+function alemDoMeu(me: SessionUser | null | undefined, row: UserRow) {
+  if (!me || row.id === me.id) return [];
+  return permissionsBeyond(me, row);
+}
 
 function randomPassword() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -47,6 +55,9 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     }
     return out;
   };
+  // R-01: credenciais e status de quem tem mais acesso que eu ficam com o administrador
+  const excesso = editing ? alemDoMeu(me, user!) : [];
+  const credTravadas = excesso.length > 0;
   const perfisDisponiveis = PERFIS.filter(p => meIsAdmin || p !== "Administrador");
   const [username, setUsername] = useState(user?.username ?? "");
   const [nome, setNome] = useState(user?.nome ?? "");
@@ -71,17 +82,17 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     setError(null);
     try {
       if (editing) {
-        await update.mutateAsync({ id: user!.id, data: { nome, email, ...(username.trim() ? { username: username.trim() } : {}), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], ...(self ? {} : { perfil, status, permissoes }), novaSenha: senha || undefined } });
+        await update.mutateAsync({ id: user!.id, data: { nome, ...(credTravadas ? {} : { email, ...(username.trim() ? { username: username.trim() } : {}) }), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], ...(self ? {} : { perfil, permissoes }), ...(self || credTravadas ? {} : { status }), novaSenha: credTravadas ? undefined : senha || undefined } });
       } else {
         await create.mutateAsync({ nome, email, username: username.trim() || undefined, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, senha });
       }
       utils.usuarios.list.invalidate();
       toast.dismiss();
-      toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado", { description: editing ? nome : `${nome} já pode entrar com ${username.trim() || email}${senha ? " e a senha inicial informada" : ""}.` });
+      toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado", { id: USUARIOS_TOAST, description: editing ? nome : `${nome} já pode entrar com ${username.trim() || email}${senha ? " e a senha inicial informada" : ""}.` });
       onClose();
     } catch (err) {
       setError(errorMessage(err));
-      toast.error("Não foi possível salvar", { description: errorMessage(err) });
+      toast.error("Não foi possível salvar", { id: USUARIOS_TOAST, description: errorMessage(err) });
     }
   };
 
@@ -90,18 +101,19 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   return (
     <Modal wide title={editing ? `Editar ${user!.nome}` : "Novo usuário"} eyebrow="Usuários e acessos" icon={<UserPlus size={20} />} description="Defina setor, perfil, matrícula e exatamente quais módulos a pessoa pode ver ou editar." onClose={onClose}>
       <form onSubmit={submit} aria-label={editing ? "Editar usuário" : "Novo usuário"}>
+        {credTravadas && <div className="erp-form-note" role="note" data-testid="credenciais-travadas">Esta pessoa tem acesso além do seu ({excesso.map(key => PERMISSION_LABELS[key]).join(", ")}). Senha, e-mail, nome de usuário e status só podem ser alterados pelo administrador.</div>}
         <div className="erp-form-grid">
           <label className="modal-field"><span>Nome completo *</span><input name="nome" required minLength={3} value={nome} onChange={e => setNome(e.target.value)} /></label>
-          <label className="modal-field"><span>E-mail corporativo *</span><input name="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
-          <label className="modal-field"><span>Nome de usuário {editing ? "*" : "(opcional)"}</span><input name="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={editing} minLength={USERNAME_MIN_LENGTH} maxLength={USERNAME_MAX_LENGTH} value={username} onChange={e => setUsername(e.target.value.toLowerCase())} placeholder={editing ? "" : "Em branco: gerado a partir do e-mail"} /><small className="erp-muted">Usado no login, junto com e-mail e matrícula. Único na empresa.</small></label>
+          <label className="modal-field"><span>E-mail corporativo *</span><input name="email" type="email" required disabled={credTravadas} value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <label className="modal-field"><span>Nome de usuário {editing ? "*" : "(opcional)"}</span><input name="username" disabled={credTravadas} autoCapitalize="none" autoCorrect="off" spellCheck={false} required={editing} minLength={USERNAME_MIN_LENGTH} maxLength={USERNAME_MAX_LENGTH} value={username} onChange={e => setUsername(e.target.value.toLowerCase())} placeholder={editing ? "" : "Em branco: gerado a partir do e-mail"} /><small className="erp-muted">Usado no login, junto com e-mail e matrícula. Único na empresa.</small></label>
           <label className="modal-field"><span>Matrícula *</span><input name="matricula" required readOnly={!canEditMatricula} aria-readonly={!canEditMatricula} value={matricula} onChange={e => setMatricula(e.target.value)} placeholder="Ex.: MAT-0042" />{!canEditMatricula && <small className="erp-muted">Somente o administrador altera a matrícula.</small>}</label>
           <label className="modal-field"><span>Setor *</span><select name="setor" value={setor} onChange={e => setSetor(e.target.value)}>{SETORES.map(s => <option key={s}>{s}</option>)}</select></label>
           <label className="modal-field"><span>Perfil *</span><select name="perfil" value={perfil} disabled={self} onChange={e => choosePerfil(e.target.value as Perfil)}>{(perfisDisponiveis.includes(perfil) ? perfisDisponiveis : [perfil, ...perfisDisponiveis]).map(p => <option key={p}>{p}</option>)}</select>{self ? <small className="erp-muted">Você não altera o próprio perfil, módulos ou status.</small> : !meIsAdmin && <small className="erp-muted">Somente o administrador concede o perfil Administrador.</small>}</label>
-          <label className="modal-field"><span>Status</span><select name="status" value={status} disabled={self} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
+          <label className="modal-field"><span>Status</span><select name="status" value={status} disabled={self || credTravadas} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
           <label className="modal-field erp-span-2"><span>{editing ? "Nova senha (deixe em branco para manter)" : "Senha inicial *"} </span>
             <span className="erp-inline">
-              <input name="senha" type="text" autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
-              <button type="button" className="button button--secondary button--compact" onClick={() => setSenha(randomPassword())}><KeyRound size={14} /> Gerar</button>
+              <input name="senha" type="text" disabled={credTravadas} autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
+              <button type="button" className="button button--secondary button--compact" disabled={credTravadas} onClick={() => setSenha(randomPassword())}><KeyRound size={14} /> Gerar</button>
             </span>
             <small className="erp-muted">Entregue a senha à pessoa por um canal seguro. Ela pode trocá-la em Meu perfil.</small>
           </label>
@@ -152,15 +164,17 @@ export default function UsuariosPage() {
   const remove = trpc.usuarios.remove.useMutation();
   // P6-01: só o administrador edita, desativa ou exclui administradores (o servidor também bloqueia)
   const protegido = (row: UserRow) => row.perfil === "Administrador" && me?.perfil !== "Administrador";
+  // R-01: status e exclusão de quem tem mais acesso que eu ficam com o administrador
+  const superior = (row: UserRow) => alemDoMeu(me, row).length > 0;
   const exportCsv = trpc.usuarios.exportCsv.useMutation();
 
   const toggleStatus = async (row: UserRow) => {
     try {
       await update.mutateAsync({ id: row.id, data: { status: row.status === "Ativo" ? "Inativo" : "Ativo" } });
       utils.usuarios.list.invalidate();
-      toast.success(row.status === "Ativo" ? "Usuário desativado" : "Usuário reativado", { description: row.nome });
+      toast.success(row.status === "Ativo" ? "Usuário desativado" : "Usuário reativado", { id: USUARIOS_TOAST, description: row.nome });
     } catch (error) {
-      toastError("Não foi possível alterar", error);
+      toast.error("Não foi possível alterar", { id: USUARIOS_TOAST, description: errorMessage(error) });
     }
   };
   const doRemove = async () => {
@@ -168,10 +182,10 @@ export default function UsuariosPage() {
     try {
       await remove.mutateAsync({ id: removing.id });
       utils.usuarios.list.invalidate();
-      toast.success("Usuário excluído", { description: removing.nome });
+      toast.success("Usuário excluído", { id: USUARIOS_TOAST, description: removing.nome });
       setRemoving(null);
     } catch (error) {
-      toastError("Não foi possível excluir", error);
+      toast.error("Não foi possível excluir", { id: USUARIOS_TOAST, description: errorMessage(error) });
     }
   };
   const doExport = async () => {
@@ -210,8 +224,8 @@ export default function UsuariosPage() {
                 <td><StatusPill label={row.status} /></td>
                 <td>{canEdit && <RowMenu label={row.nome} actions={[
                   { label: "Editar", onSelect: () => setForm({ user: row }), disabled: protegido(row), icon: <Pencil size={14} /> },
-                  { label: row.status === "Ativo" ? "Desativar" : "Reativar", onSelect: () => toggleStatus(row), disabled: row.id === me?.id || protegido(row), icon: row.status === "Ativo" ? <UserX size={14} /> : <UserCheck size={14} /> },
-                  { label: "Excluir", onSelect: () => setRemoving(row), danger: true, disabled: row.id === me?.id || protegido(row), icon: <Trash2 size={14} /> },
+                  { label: row.status === "Ativo" ? "Desativar" : "Reativar", onSelect: () => toggleStatus(row), disabled: row.id === me?.id || protegido(row) || superior(row), icon: row.status === "Ativo" ? <UserX size={14} /> : <UserCheck size={14} /> },
+                  { label: "Excluir", onSelect: () => setRemoving(row), danger: true, disabled: row.id === me?.id || protegido(row) || superior(row), icon: <Trash2 size={14} /> },
                 ]} />}</td>
               </tr>
             ))}

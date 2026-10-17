@@ -80,3 +80,74 @@ test.describe("P6-03: troca de senha com mensagens próprias em português", () 
     await expect(page.locator("body")).not.toContainText(/Please fill|Invalid input|expected string/);
   });
 });
+
+async function criarComoAdmin(page: Page, dados: { nome: string; email: string; matricula: string; perfil: string; extras?: Record<string, "ver" | "editar">; senha: string }) {
+  await page.goto("/usuarios");
+  await page.getByRole("button", { name: "Novo usuário" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('input[name="nome"]').fill(dados.nome);
+  await dialog.locator('input[name="email"]').fill(dados.email);
+  await dialog.locator('input[name="matricula"]').fill(dados.matricula);
+  await dialog.locator('select[name="perfil"]').selectOption(dados.perfil);
+  for (const [label, nivel] of Object.entries(dados.extras ?? {})) await dialog.getByLabel(`Permissão ${label}`).selectOption(nivel);
+  await dialog.locator('input[name="senha"]').fill(dados.senha);
+  await dialog.getByRole("button", { name: "Cadastrar usuário" }).click();
+  await expect(page.getByTestId("user-row").filter({ hasText: dados.email })).toBeVisible();
+}
+
+test.describe("R-01: não administrador não assume a conta de quem tem mais acesso (tela)", () => {
+  test("credenciais e status de quem excede a gestora ficam travados; de quem está dentro do acesso dela, liberados", async ({ page }) => {
+    const stamp = Date.now() % 100000;
+    const gestora = { nome: `Gestora R01 ${stamp}`, email: `gestora.r01.${stamp}@teste.local`, matricula: `GR1-${stamp}`, perfil: "Gestor", extras: { "Usuários e acessos": "editar" as const }, senha: novaSenha() };
+    const superior = { nome: `Superior R01 ${stamp}`, email: `superior.r01.${stamp}@teste.local`, matricula: `SR1-${stamp}`, perfil: "Gestor", extras: { Financeiro: "editar" as const }, senha: novaSenha() };
+    const subordinado = { nome: `Subordinado R01 ${stamp}`, email: `sub.r01.${stamp}@teste.local`, matricula: `UR1-${stamp}`, perfil: "Operador", senha: novaSenha() };
+    await login(page);
+    for (const u of [gestora, superior, subordinado]) await criarComoAdmin(page, u);
+
+    await page.context().clearCookies();
+    await login(page, gestora.email, gestora.senha);
+    await page.goto("/usuarios");
+    await page.getByRole("searchbox", { name: "Buscar usuário" }).or(page.getByLabel("Buscar usuário")).fill(`R01 ${stamp}`);
+
+    // superior: Desativar/Excluir desabilitados; no Editar, senha/e-mail/usuário/status travados com aviso
+    await abrirMenu(page, superior.email, superior.nome);
+    await expect(page.getByRole("menuitem", { name: "Desativar" })).toBeDisabled();
+    await expect(page.getByRole("menuitem", { name: "Excluir" })).toBeDisabled();
+    await page.getByRole("menuitem", { name: "Editar" }).click();
+    let dialog = page.getByRole("dialog");
+    await expect(dialog.getByTestId("credenciais-travadas")).toContainText("Financeiro");
+    for (const campo of ['input[name="email"]', 'input[name="username"]', 'input[name="senha"]', 'select[name="status"]']) await expect(dialog.locator(campo), campo).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Gerar" })).toBeDisabled();
+    // ainda pode ajustar dados não sensíveis (setor) e salvar
+    await dialog.locator('select[name="setor"]').selectOption("Qualidade");
+    await dialog.getByRole("button", { name: "Salvar alterações" }).click();
+    await expect(page.getByTestId("user-row").filter({ hasText: superior.email })).toContainText("Qualidade");
+
+    // subordinado (dentro do acesso da gestora): tudo liberado
+    await abrirMenu(page, subordinado.email, subordinado.nome);
+    await expect(page.getByRole("menuitem", { name: "Desativar" })).toBeEnabled();
+    await expect(page.getByRole("menuitem", { name: "Excluir" })).toBeEnabled();
+    await page.getByRole("menuitem", { name: "Editar" }).click();
+    dialog = page.getByRole("dialog");
+    await expect(dialog.getByTestId("credenciais-travadas")).toHaveCount(0);
+    await expect(dialog.locator('input[name="senha"]')).toBeEnabled();
+    await expect(dialog.locator('input[name="email"]')).toBeEnabled();
+  });
+
+  test("R-03: no modal de Usuários, o aviso de erro anterior some ao mostrar o novo", async ({ page }) => {
+    await login(page);
+    await page.goto("/usuarios");
+    await page.getByRole("button", { name: "Novo usuário" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator('input[name="nome"]').fill("Pessoa Duplicada");
+    await dialog.locator('input[name="email"]').fill(E2E_ADMIN.email);
+    await dialog.locator('input[name="matricula"]').fill(`DUP-${Date.now() % 100000}`);
+    await dialog.locator('input[name="senha"]').fill(novaSenha());
+    for (let i = 0; i < 3; i++) {
+      // envia com Enter: o próprio aviso pode cobrir o botão em telas baixas
+      await dialog.locator('input[name="nome"]').press("Enter");
+      await expect(dialog.getByRole("alert")).toContainText("já está cadastrado");
+    }
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
+  });
+});

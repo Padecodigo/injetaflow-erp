@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { MemoryRepository } from "../repository";
 import { USERS, hashUserPassword } from "../auth";
 import { generatePassword } from "../password";
-import { createUser, deleteUser, migrateUsernames, restoreUser } from "../users";
+import { createUser, deleteUser, formatBrasilia, migrateUsernames, restoreUser } from "../users";
 import { AUTOR_CLI, AUTOR_INICIALIZACAO, AUTOR_MIGRACAO, type AuditEntry } from "../audit";
 import { DEFAULT_EMPRESA_ID } from "../store";
 import { ensureSeed } from "../seed";
 import type { SessionUser, UserData } from "../types";
-import { createAndLogin, setup } from "./helpers";
+import { callerFor, createAndLogin, setup } from "./helpers";
 
 const senha = () => generatePassword(10);
 const base = (email: string, matricula: string) => ({ nome: `Pessoa ${matricula}`, email, senha: senha(), setor: "Produção" as const, matricula, status: "Ativo" as const });
@@ -148,5 +148,69 @@ describe("P6-06: restaurar usuário excluído logicamente", () => {
     const out = await restoreUser(repo, empresaId, "dup-1", { autor: AUTOR_CLI });
     expect(out.usernameTrocado).toBe(true);
     expect(out.user.username).not.toBe("dup");
+  });
+});
+
+describe("R-01: não administrador não assume a conta de quem tem mais acesso (API)", () => {
+  it("recusa senha, e-mail, nome de usuário, status e exclusão de quem excede as permissões de quem edita", async () => {
+    const { repo, empresaId, gestora } = await cenario(); // gestora: usuarios editar, producao editar, qualidade ver
+    const senhaOriginal = senha();
+    const sup = await createUser(repo, null, empresaId, { ...base("sup@teste.local", "SUP-1"), senha: senhaOriginal, username: "sup", perfil: "Supervisor", permissoes: { financeiro: "editar" } });
+    const msg = /Somente o administrador pode .* acesso além do seu \(Financeiro\)/;
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { novaSenha: senha() } })).rejects.toThrow(msg);
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { email: "minha@teste.local" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { username: "sup.novo" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { status: "Inativo" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(gestora.caller.usuarios.remove({ id: sup.id })).rejects.toThrow(/Somente o administrador pode excluir o usuário/);
+    // nada mudou e a senha original continua valendo; a gestora não consegue entrar como ele
+    const depois = (await repo.get<UserData>(USERS, empresaId, sup.id))!;
+    expect(depois.data).toMatchObject({ email: "sup@teste.local", username: "sup", status: "Ativo" });
+    const anon = await callerFor(repo);
+    await expect(anon.caller.auth.login({ identificador: "sup", password: senhaOriginal })).resolves.toBeTruthy();
+    // mesmo valor enviado (formulário completo) não conta como alteração; dados não sensíveis seguem editáveis
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { nome: "Supervisor Renomeado", setor: "Qualidade", email: "SUP@teste.local", username: "sup", status: "Ativo" } })).resolves.toMatchObject({ nome: "Supervisor Renomeado", setor: "Qualidade" });
+  });
+
+  it("nível maior no mesmo módulo também excede (qualidade: editar > ver)", async () => {
+    const { repo, empresaId, gestora } = await cenario();
+    const q = await createUser(repo, null, empresaId, { ...base("q@teste.local", "Q-1"), perfil: "Operador", permissoes: { qualidade: "editar" } });
+    await expect(gestora.caller.usuarios.update({ id: q.id, data: { novaSenha: senha() } })).rejects.toThrow(/Qualidade/);
+  });
+
+  it("libera quando as permissões do alvo estão dentro das de quem edita", async () => {
+    const { repo, empresaId, gestora } = await cenario();
+    const nova = senha();
+    const sub = await createUser(repo, null, empresaId, { ...base("sub@teste.local", "SUB-1"), perfil: "Operador", permissoes: { producao: "ver", qualidade: "ver" } });
+    await expect(gestora.caller.usuarios.update({ id: sub.id, data: { novaSenha: nova, email: "sub2@teste.local", username: "sub.dois", status: "Inativo" } })).resolves.toMatchObject({ email: "sub2@teste.local", username: "sub.dois", status: "Inativo" });
+    await gestora.caller.usuarios.update({ id: sub.id, data: { status: "Ativo" } });
+    const anon = await callerFor(repo);
+    await expect(anon.caller.auth.login({ identificador: "sub.dois", password: nova })).resolves.toBeTruthy();
+    await expect(gestora.caller.usuarios.remove({ id: sub.id })).resolves.toEqual({ success: true });
+  });
+
+  it("administrador continua com poder total sobre qualquer usuário", async () => {
+    const { repo, empresaId, admin } = await cenario();
+    const sup = await createUser(repo, null, empresaId, { ...base("sup3@teste.local", "SUP-3"), perfil: "Gestor", permissoes: { financeiro: "editar", configuracoes: "editar" } });
+    await expect(admin.caller.usuarios.update({ id: sup.id, data: { novaSenha: senha(), email: "sup4@teste.local", username: "sup.quatro", status: "Inativo" } })).resolves.toMatchObject({ username: "sup.quatro", status: "Inativo" });
+    await expect(admin.caller.usuarios.remove({ id: sup.id })).resolves.toEqual({ success: true });
+  });
+});
+
+describe("R-02: restauração de quem não tinha nome de usuário; datas em horário de Brasília", () => {
+  it("mensagem e auditoria corretas para username vazio", async () => {
+    const { repo, empresaId } = await setup();
+    const antigo = await repo.insert<UserData>(USERS, empresaId, { nome: "Sem Username", email: "sem.user@teste.local", senhaHash: hashUserPassword(senha()), setor: "Produção", perfil: "Operador", matricula: "SU-1", permissoes: {}, status: "Inativo", ultimoAcesso: null });
+    await repo.softDelete(USERS, empresaId, antigo.id, null);
+    const out = await restoreUser(repo, empresaId, "su-1", { autor: AUTOR_CLI });
+    expect(out.usernameMotivo).toBe("vazio");
+    expect(out.user.username).toBe("sem.user");
+    const { items } = await repo.list<AuditEntry>("auditoria", empresaId, { filter: d => d.acao === "restaurar" });
+    expect(items[0].data.resumo).toMatch(/não tinha nome de usuário/);
+    expect(items[0].data.resumo).not.toContain('""');
+  });
+
+  it("formatBrasilia converte UTC para o horário de Brasília", () => {
+    expect(formatBrasilia("2026-10-17T15:05:00.000Z")).toBe("17/10/2026, 12:05 (horário de Brasília)");
+    expect(formatBrasilia(null)).toBe("-");
   });
 });

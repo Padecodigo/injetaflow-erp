@@ -505,6 +505,7 @@ button.help-card:hover { background: rgba(239,127,18,.08); }
 .erp-span-2 { grid-column: span 2; }
 .erp-span-4 { grid-column: 1 / -1; margin-top: 14px; }
 .erp-form-error { margin-top: 14px; padding: 10px 12px; border-radius: 8px; color: #a8363a; background: #fff0f0; font-size: 11px; line-height: 1.5; }
+.erp-form-note { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #7a5a00; background: #fff8e1; font-size: 12px; line-height: 1.5; }
 .erp-field-error { color: #b23a3d; font-size: 10px; font-weight: 650; }
 .erp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .erp-confirm-text { color: #59656f; font-size: 12px; line-height: 1.6; }

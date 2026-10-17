@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, hasPermission, isAdminPerfil, type Permissions } from "@shared/erp/modules";
+import { PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, hasPermission, isAdminPerfil, permissionsBeyond, type Permissions } from "@shared/erp/modules";
 import type { DataRepository, StoredRecord } from "./repository";
 import type { SessionUser, UserData } from "./types";
 import { AUTOR_MIGRACAO, actorOf, audit, systemActor } from "./audit";
@@ -130,6 +130,19 @@ function assertCanGrant(actor: SessionUser, next: Permissions, previous: Permiss
   }
 }
 
+/**
+ * R-01: quem não é administrador só mexe em credenciais/identificadores (senha, e-mail, nome de
+ * usuário), status ou exclusão de quem tem permissões dentro das dele (mesmo nível ou menor).
+ * Sem isso, daria para assumir a conta de alguém com mais acesso e entrar como ele.
+ */
+function assertWithinActor(actor: SessionUser, target: StoredRecord<UserData>, acao: string) {
+  if (isAdminPerfil(actor.perfil) || target.id === actor.id) return;
+  const excesso = permissionsBeyond(actor, { perfil: target.data.perfil, permissoes: sanitizePermissions(target.data.permissoes) });
+  if (excesso.length) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Somente o administrador pode ${acao} de ${target.data.nome}, que tem acesso além do seu (${excesso.map(key => PERMISSION_LABELS[key]).join(", ")}).` });
+  }
+}
+
 const ADMIN_ONLY = "Somente o administrador pode criar, editar ou excluir administradores e conceder o perfil Administrador.";
 
 export async function createUser(repo: DataRepository, actor: SessionUser | null, empresaId: string, input: z.input<typeof userCreateSchema>, opts: { demo?: boolean; autor?: string } = {}) {
@@ -193,6 +206,15 @@ export async function updateUser(repo: DataRepository, actor: SessionUser, id: s
   const perfilMuda = rest.perfil !== undefined && rest.perfil !== existing.data.perfil;
   const statusMuda = rest.status !== undefined && rest.status !== existing.data.status;
   const permissoesMudam = rest.permissoes !== undefined && !samePermissions(rest.permissoes, existing.data.permissoes);
+  if (!actorIsAdmin && id !== actor.id) {
+    const sensiveis = [
+      novaSenha ? "senha" : null,
+      rest.email !== undefined && normalizeEmail(rest.email) !== existing.data.email ? "e-mail" : null,
+      rest.username !== undefined && normalizeUsername(rest.username) !== lower(existing.data.username) ? "nome de usuário" : null,
+      statusMuda ? "status" : null,
+    ].filter(Boolean) as string[];
+    if (sensiveis.length) assertWithinActor(actor, existing, `alterar ${sensiveis.join(", ")}`);
+  }
   if (!actorIsAdmin && permissoesMudam && id !== actor.id) assertCanGrant(actor, rest.permissoes as Permissions, sanitizePermissions(existing.data.permissoes));
   const patch: Partial<UserData> = { ...rest } as Partial<UserData>;
   if (rest.email && normalizeEmail(rest.email) !== existing.data.email) {
@@ -274,6 +296,7 @@ export async function deleteUser(repo: DataRepository, actor: SessionUser, id: s
   const existing = await repo.get<UserData>(USERS, actor.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
   if (!isAdminPerfil(actor.perfil) && isAdminPerfil(existing.data.perfil)) throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_ONLY });
+  assertWithinActor(actor, existing, "excluir o usuário");
   if (isAdminPerfil(existing.data.perfil) && existing.data.status === "Ativo" && (await countActiveAdmins(repo, actor.empresaId, id)) === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa precisa de pelo menos um administrador ativo." });
   }
@@ -281,6 +304,14 @@ export async function deleteUser(repo: DataRepository, actor: SessionUser, id: s
   await destroyUserSessions(repo, id);
   await audit(repo, actor.empresaId, actor, { acao: "excluir", modulo: "usuarios", registroId: id, resumo: `Usuário ${existing.data.nome} (${existing.data.perfil}) · matrícula ${existing.data.matricula}` });
   return { success: true as const };
+}
+
+/** Data/hora em horário de Brasília para mensagens de linha de comando. */
+export function formatBrasilia(iso: string | null | undefined) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return `${d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} (horário de Brasília)`;
 }
 
 /** Usuários excluídos logicamente (para o comando de restauração). */
@@ -301,26 +332,25 @@ export async function restoreUser(repo: DataRepository, empresaId: string, ident
   const deleted = await listDeletedUsers(repo, empresaId);
   const found = deleted.filter(user => user.id.toLowerCase() === id || lower(user.data.email) === id || lower(user.data.username) === id || lower(user.data.matricula) === id);
   if (found.length === 0) throw new Error(`Nenhum usuário excluído corresponde a "${identificador}" em ${empresaId}.`);
-  if (found.length > 1) throw new Error(`"${identificador}" corresponde a ${found.length} usuários excluídos. Use o id: ${found.map(u => `${u.id} (${u.data.nome}, excluído em ${u.deletedAt})`).join("; ")}.`);
+  if (found.length > 1) throw new Error(`"${identificador}" corresponde a ${found.length} usuários excluídos. Use o id: ${found.map(u => `${u.id} (${u.data.nome}, excluído em ${formatBrasilia(u.deletedAt)})`).join("; ")}.`);
   const user = found[0];
   const sameEmail = await findUserByEmail(repo, user.data.email);
   if (sameEmail) throw new Error(`O e-mail ${user.data.email} já pertence a outro usuário ativo (${sameEmail.data.nome}). Altere o e-mail dele antes de restaurar.`);
   await assertMatriculaFree(repo, empresaId, user.data.matricula, user.id).catch(error => { throw new Error(error.message); });
-  let username = user.data.username;
-  let usernameTrocado = false;
+  let username = user.data.username || undefined;
+  let usernameMotivo: "vazio" | "em uso" | null = username ? null : "vazio";
   try {
     if (username) await assertUsernameFree(repo, empresaId, username, user.id);
   } catch {
     username = undefined;
+    usernameMotivo = "em uso";
   }
-  if (!username) {
-    username = await uniqueUsername(repo, empresaId, usernameFromEmail(user.data.email), user.id);
-    usernameTrocado = true;
-  }
+  if (!username) username = await uniqueUsername(repo, empresaId, usernameFromEmail(user.data.email), user.id);
+  const usernameTrocado = usernameMotivo !== null;
   const actor = systemActor(opts.autor);
   await repo.restore(USERS, empresaId, user.id, actor);
   if (usernameTrocado) await repo.update<UserData>(USERS, empresaId, user.id, { username }, actor);
-  await audit(repo, empresaId, null, { autor: opts.autor, acao: "restaurar", modulo: "usuarios", registroId: user.id, resumo: `Usuário ${user.data.nome} (${user.data.perfil}) restaurado · matrícula ${user.data.matricula} · usuário "${username}"${usernameTrocado ? ` (o anterior "${user.data.username ?? ""}" estava em uso)` : ""} · status ${user.data.status}` });
+  await audit(repo, empresaId, null, { autor: opts.autor, acao: "restaurar", modulo: "usuarios", registroId: user.id, resumo: `Usuário ${user.data.nome} (${user.data.perfil}) restaurado · matrícula ${user.data.matricula} · usuário "${username}"${usernameMotivo === "em uso" ? ` (o anterior "${user.data.username}" estava em uso)` : usernameMotivo === "vazio" ? " (não tinha nome de usuário; recebeu um derivado do e-mail)" : ""} · status ${user.data.status}` });
   const restored = (await repo.get<UserData>(USERS, empresaId, user.id))!;
-  return { user: toSessionUser(restored), usernameTrocado, excluidoEm: user.deletedAt ?? null };
+  return { user: toSessionUser(restored), usernameTrocado, usernameMotivo, usernameAnterior: user.data.username ?? null, excluidoEm: user.deletedAt ?? null };
 }
