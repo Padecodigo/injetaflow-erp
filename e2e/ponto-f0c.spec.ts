@@ -73,9 +73,11 @@ test.describe("F0c: ponto só no relógio oficial", () => {
     }
     const input = encodeURIComponent(JSON.stringify({ json: { search: "records.create" } }));
     const audit = await (await page.request.get(`/api/trpc/config.auditoria?input=${input}`)).json();
-    const linhas = audit.result.data.json.items as { resumo: string; tentativas?: number }[];
+    const linhas = audit.result.data.json.items as { resumo: string; alvo?: string }[];
     const doCrud = linhas.filter(l => /via records\.create/.test(l.resumo));
+    // P7-R2-02: append-only; só a 1ª tentativa da janela é gravada, com o próprio resumo e alvo
     expect(doCrud).toHaveLength(1);
-    expect(doCrud[0].tentativas).toBeGreaterThanOrEqual(6);
+    expect(doCrud[0].alvo).toBe("MAT-0001");
+    expect(doCrud[0].resumo).toMatch(/em nome de outra pessoa, matrícula MAT-0001/);
   });
 });

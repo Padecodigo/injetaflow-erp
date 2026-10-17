@@ -20,7 +20,7 @@ pnpm dev
 4. Perdeu a senha? Pare o `pnpm dev` e rode `pnpm erp:reset-senha` (gera outra e mostra no terminal) ou `pnpm erp:reset-senha <e-mail | usuário | matrícula>`. Veja [Redefinir senha e usuário do admin](#redefinir-senha-e-usuário-do-admin).
 5. Os dados ficam em `.data/` (ignorada pelo git). Para recomeçar do zero, pare o servidor e apague essa pasta.
 
-Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o selo **DEMO**; para não carregá-los, use `INJETAFLOW_SEED_DEMO=false` no primeiro start. As marcações de ponto de demonstração (origem "Demonstração") não são criadas com `NODE_ENV=production`; para ligá-las ou desligá-las explicitamente, use `INJETAFLOW_SEED_DEMO_PONTO=true|false`. O ERP não registra ponto: a origem oficial das marcações é o relógio (REP).
+Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o selo **DEMO**; para não carregá-los, use `INJETAFLOW_SEED_DEMO=false` no primeiro start. As marcações de ponto de demonstração (origem "Demonstração") só são criadas com `NODE_ENV=development` ou `test` (o `pnpm dev` já define development); com `NODE_ENV` ausente ou `production` não são criadas. Para ligá-las explicitamente, use `INJETAFLOW_SEED_DEMO_PONTO=1` (e `=0` para desligar). O ERP não registra ponto: a origem oficial das marcações é o relógio (REP).
 
 ## Comandos
 

@@ -178,14 +178,16 @@ export async function seedDemo(repo: DataRepository, actor: SessionUser, opts: {
 }
 
 /**
- * P7-07 (aceite do PR #7): o ERP não grava ponto (F0c, a origem oficial é o relógio REP). As marcações de
- * demonstração só existem fora de produção, ou quando `INJETAFLOW_SEED_DEMO_PONTO=true` (usado pelo E2E).
- * `INJETAFLOW_SEED_DEMO_PONTO=false` desliga também em desenvolvimento.
+ * P7-07 (aceite R1) e P7-R2-03 (aceite R2): o ERP não grava ponto (F0c, a origem oficial é o relógio REP).
+ * As marcações de demonstração só são semeadas com `NODE_ENV=development` ou `test` (o `pnpm dev` define
+ * development; o vitest, test), ou com `INJETAFLOW_SEED_DEMO_PONTO=1` explícito (usado pelo E2E, que roda o build
+ * de produção). `NODE_ENV` ausente ou `production` não semeia. `INJETAFLOW_SEED_DEMO_PONTO=0` desliga sempre.
  */
 export function deveSemearPontoDemo(env: NodeJS.ProcessEnv): boolean {
-  if (env.INJETAFLOW_SEED_DEMO_PONTO === "true") return true;
-  if (env.INJETAFLOW_SEED_DEMO_PONTO === "false") return false;
-  return env.NODE_ENV !== "production";
+  const flag = (env.INJETAFLOW_SEED_DEMO_PONTO ?? "").trim().toLowerCase();
+  if (flag === "1" || flag === "true") return true;
+  if (flag === "0" || flag === "false") return false;
+  return env.NODE_ENV === "development" || env.NODE_ENV === "test";
 }
 
 /**

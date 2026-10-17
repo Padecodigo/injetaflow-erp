@@ -102,11 +102,20 @@ describe("P7-03: resumo da negação distingue próprio ponto de outra pessoa (u
 
 describe("P7-07: seed de ponto de demonstração nunca em produção por padrão (unit)", () => {
   it("decide pelo ambiente", () => {
+    // P7-R2-03: só development/test, ou INJETAFLOW_SEED_DEMO_PONTO=1 explícito; NODE_ENV ausente não semeia
     expect(deveSemearPontoDemo({ NODE_ENV: "production" })).toBe(false);
-    expect(deveSemearPontoDemo({ NODE_ENV: "production", INJETAFLOW_SEED_DEMO_PONTO: "true" })).toBe(true);
+    expect(deveSemearPontoDemo({})).toBe(false);
+    expect(deveSemearPontoDemo({ NODE_ENV: "" })).toBe(false);
+    expect(deveSemearPontoDemo({ NODE_ENV: "staging" })).toBe(false);
     expect(deveSemearPontoDemo({ NODE_ENV: "development" })).toBe(true);
-    expect(deveSemearPontoDemo({ NODE_ENV: "development", INJETAFLOW_SEED_DEMO_PONTO: "false" })).toBe(false);
-    expect(deveSemearPontoDemo({})).toBe(true);
+    expect(deveSemearPontoDemo({ NODE_ENV: "test" })).toBe(true);
+    expect(deveSemearPontoDemo({ INJETAFLOW_SEED_DEMO_PONTO: "1" })).toBe(true);
+    expect(deveSemearPontoDemo({ NODE_ENV: "production", INJETAFLOW_SEED_DEMO_PONTO: "1" })).toBe(true);
+    expect(deveSemearPontoDemo({ NODE_ENV: "development", INJETAFLOW_SEED_DEMO_PONTO: "0" })).toBe(false);
+    // o pnpm dev define NODE_ENV=development; o E2E define INJETAFLOW_SEED_DEMO_PONTO=1
+    const raiz = join(__dirname, "..", "..", "..");
+    expect(JSON.parse(readFileSync(join(raiz, "package.json"), "utf8")).scripts.dev).toMatch(/NODE_ENV=development/);
+    expect(readFileSync(join(raiz, "playwright.config.ts"), "utf8")).toMatch(/INJETAFLOW_SEED_DEMO_PONTO: "1"/);
   });
 });
 

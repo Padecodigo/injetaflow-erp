@@ -43,7 +43,7 @@ export default defineConfig({
       INJETAFLOW_DEMO_PASSWORD: E2E_DEMO_SENHA,
       INJETAFLOW_COOKIE_SECURE: "false",
       // P7-07: o seed de ponto (origem "Demonstração") não roda em produção por padrão; o E2E liga explicitamente
-      INJETAFLOW_SEED_DEMO_PONTO: "true",
+      INJETAFLOW_SEED_DEMO_PONTO: "1",
     },
   },
 });
