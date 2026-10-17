@@ -25,6 +25,10 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -d "$PROJECT_DIR/node_modules" ]]; then
+  (cd "$PROJECT_DIR" && pnpm install --frozen-lockfile) >>"$LOG_FILE" 2>&1
+fi
+
 if ! curl -fsS "$URL" >/dev/null 2>&1; then
   nohup bash -lc "cd '$PROJECT_DIR' && pnpm dev" >>"$LOG_FILE" 2>&1 &
   for _ in {1..30}; do
