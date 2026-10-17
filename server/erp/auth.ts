@@ -139,5 +139,5 @@ export function setSessionCookie(req: Request, res: Response, token: string, exp
 }
 
 export function clearSessionCookie(req: Request, res: Response) {
-  res.clearCookie(SESSION_COOKIE, { ...sessionCookieOptions(req), maxAge: -1 });
+  res.clearCookie(SESSION_COOKIE, sessionCookieOptions(req));
 }
