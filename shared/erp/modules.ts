@@ -343,6 +343,9 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "dataHora", label: "Data e hora", type: "datetime", readOnly: true },
       { name: "origem", label: "Origem", type: "select", options: ["GPS", "Rede local", "Manual"], required: true },
       { name: "simulado", label: "Origem simulada", type: "text", readOnly: true },
+      // F0a: batida fora de sequência é gravada e sinalizada (Portaria 671, arts. 74 e 98), nunca recusada
+      { name: "validacao", label: "Validação", type: "text", readOnly: true },
+      { name: "divergencia", label: "Divergência", type: "text", readOnly: true },
       { name: "observacao", label: "Observação", type: "textarea" },
     ],
     columns: ["dataHora", "matricula", "nome", "tipo", "origem", "simulado"],

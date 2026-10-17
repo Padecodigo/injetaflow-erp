@@ -15,7 +15,7 @@ test.describe("N08: ERP no celular (390px)", () => {
     }
   });
 
-  test("N08: Exportar CSV, Nova movimentação e Registrar ponto ficam visíveis e funcionam", async ({ page }) => {
+  test("N08: Exportar CSV, Nova movimentação e Registrar ocorrência ficam visíveis e funcionam", async ({ page }) => {
     await login(page);
     await page.goto("/estoque");
     const header = page.locator(".page-header");
@@ -27,10 +27,11 @@ test.describe("N08: ERP no celular (390px)", () => {
     await page.goto("/ordens");
     await expect(page.locator(".page-header").getByRole("button", { name: "Exportar CSV" })).toBeVisible();
     await page.goto("/rh");
-    const ponto = page.locator(".page-header").getByRole("button", { name: "Registrar ponto" });
-    await expect(ponto).toBeVisible();
-    await ponto.click();
-    await expect(page.getByRole("dialog", { name: /Registrar ponto/ })).toBeVisible();
+    // F0a/F0c: o ERP não registra ponto (só o relógio oficial); o atalho virou "Registrar ocorrência" (fluxo N07)
+    const ocorrencia = page.locator(".page-header").getByRole("button", { name: "Registrar ocorrência" });
+    await expect(ocorrencia).toBeVisible();
+    await ocorrencia.click();
+    await expect(page.getByRole("dialog", { name: /Registrar ocorrência de ajuste/ })).toBeVisible();
   });
 
   test("N08: o aviso (toast) não cobre a barra superior", async ({ page }) => {

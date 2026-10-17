@@ -11,7 +11,7 @@ import {
 import { verifyPassword } from "./password";
 import { actorOf, audit, type AuditEntry } from "./audit";
 import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, summarize, updateRecord, type RecordData } from "./records";
-import { historico, ORIGENS_PONTO, presenca, registrarPonto, relatorio, relatorioCsv, TIPOS_PONTO } from "./rh";
+import { historico, presenca, registroPontoDesativado, relatorio, relatorioCsv } from "./rh";
 import { dashboardSummary } from "./dashboard";
 import { createUser, deleteUser, listUsers, updateOwnAccount, updateUser, userCreateSchema, userUpdateSchema } from "./users";
 import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
@@ -197,12 +197,16 @@ export const usuariosRouter = router({
   }),
 });
 
-const pontoInput = z.object({ matricula: z.string().trim().min(1, "Informe a matrícula").max(40), tipo: z.enum(TIPOS_PONTO), origem: z.enum(ORIGENS_PONTO), observacao: z.string().max(500).optional() });
 const relatorioInput = z.object({ inicio: dateStr, fim: dateStr, matricula: z.string().max(40).optional() });
 
 export const rhRouter = router({
   presenca: moduleProcedure("rh", "ver").input(z.object({ date: dateStr.optional() }).optional()).query(({ ctx, input }) => presenca(ctx.repo, ctx.user.empresaId, input?.date ?? todayIso())),
-  registrarPonto: moduleProcedure("rh", "editar").input(pontoInput).mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, input)),
+  // F0a/F0c (plano RH/Ponto v2 §2.2-c e v3 §7): o ERP não registra ponto, nem em nome de outra pessoa nem para si.
+  // A marcação oficial vem do relógio (REP). A procedure existe só para responder FORBIDDEN com orientação.
+  registrarPonto: protectedProcedure.input(z.unknown().optional()).mutation(async ({ ctx }) => {
+    await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "negado", modulo: "rh", resumo: "Tentativa de registrar ponto pelo ERP em nome de outra pessoa (bloqueada: ponto só no relógio oficial)" });
+    throw registroPontoDesativado();
+  }),
   relatorio: moduleProcedure("rh", "ver").input(relatorioInput).query(({ ctx, input }) => relatorio(ctx.repo, ctx.user.empresaId, input)),
   relatorioCsv: moduleProcedure("rh", "ver").input(relatorioInput).mutation(({ ctx, input }) => relatorioCsv(ctx.repo, ctx.user.empresaId, input)),
   historico: moduleProcedure("rh", "ver").input(z.object({ matricula: z.string().min(1).max(40) })).query(({ ctx, input }) => historico(ctx.repo, ctx.user.empresaId, input.matricula)),
@@ -251,9 +255,11 @@ export const perfilRouter = router({
   atualizarConta: protectedProcedure
     .input(z.record(z.string(), z.unknown(), { error: "Informe o nome de usuário." }))
     .mutation(({ ctx, input }) => updateOwnAccount(ctx.repo, ctx.user, input)),
-  registrarPonto: protectedProcedure
-    .input(pontoInput.omit({ matricula: true }))
-    .mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, { ...input, matricula: ctx.user.matricula })),
+  // F0c (plano RH/Ponto v3 §7): o próprio ponto também não é registrado pelo ERP (só no relógio oficial).
+  registrarPonto: protectedProcedure.input(z.unknown().optional()).mutation(async ({ ctx }) => {
+    await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "negado", modulo: "rh", resumo: "Tentativa de registrar o próprio ponto pelo ERP (bloqueada: ponto só no relógio oficial)" });
+    throw registroPontoDesativado();
+  }),
   novaOcorrencia: protectedProcedure
     .input(ocorrenciaInput)
     .mutation(async ({ ctx, input }) => {

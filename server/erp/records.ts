@@ -268,7 +268,8 @@ async function applyRules(repo: DataRepository, empresaId: string, mod: ModuleDe
 export async function createRecord(repo: DataRepository, user: SessionUser, moduleKey: ModuleKey, input: unknown, opts: { demo?: boolean } = {}) {
   const mod = MODULES[moduleKey];
   if (moduleKey === "movimentacoes") return createMovement(repo, user, input, opts);
-  if (moduleKey === "ponto") throw new TRPCError({ code: "BAD_REQUEST", message: "Use o registro de ponto do RH." });
+  // F0c: o ERP não cria marcação de ponto por nenhum caminho (o ponto é registrado no relógio oficial)
+  if (moduleKey === "ponto") throw new TRPCError({ code: "FORBIDDEN", message: PONTO_SO_NO_RELOGIO });
   const data = validateInput(mod, input, "create");
   if (mod.autoCode) data[mod.autoCode.field] = await nextCode(repo, user.empresaId, mod);
   await applyRules(repo, user.empresaId, mod, data);
@@ -311,6 +312,9 @@ function describe(mod: ModuleDef, data: RecordData): string {
   return String(data[key] ?? data.nome ?? "").trim();
 }
 
+/** F0c (plano RH/Ponto v3, §7): orientação única para qualquer tentativa de registrar ponto pelo ERP. */
+export const PONTO_SO_NO_RELOGIO =
+  "O ponto é registrado no relógio oficial (REP) da empresa, não pelo ERP. Para corrigir ou justificar uma marcação, registre uma ocorrência de ajuste em Meu perfil para análise do RH.";
 /** N11: marcação de ponto não se apaga nem se edita (Portaria 671/MTE). */
 export const PONTO_IMUTAVEL = "Marcações de ponto não podem ser editadas nem excluídas (Portaria 671/MTE). Registre uma ocorrência de ajuste para o RH analisar.";
 

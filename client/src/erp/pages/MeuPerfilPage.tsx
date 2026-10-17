@@ -152,7 +152,6 @@ export default function MeuPerfilPage() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const resumo = trpc.perfil.resumo.useQuery();
-  const ponto = trpc.perfil.registrarPonto.useMutation();
   const [ocorrencia, setOcorrencia] = useState(false);
   const [editando, setEditando] = useState<OcorrenciaRow | null>(null);
   const cancelar = trpc.perfil.cancelarOcorrencia.useMutation();
@@ -169,34 +168,22 @@ export default function MeuPerfilPage() {
   };
   const [periodo, setPeriodo] = useState<"mes" | "tudo">("mes");
   const [completo, setCompleto] = useState(false);
-  const [origem, setOrigem] = useState<"Rede local" | "GPS" | "Manual">("Rede local");
 
   const doLogout = async () => {
     await logout();
     toast.success("Sessão encerrada");
     navigate("/erp");
   };
-  const baterPonto = async (tipo: "Entrada" | "Início de intervalo" | "Fim de intervalo" | "Saída") => {
-    try {
-      await ponto.mutateAsync({ tipo, origem });
-      utils.perfil.resumo.invalidate();
-      utils.rh.invalidate();
-      toast.success("Ponto registrado", { description: `${tipo} · ${origem}${origem !== "Manual" ? " (simulado)" : ""}` });
-    } catch (error) {
-      toast.error("Registro recusado", { description: errorMessage(error) });
-    }
-  };
-
   const mesAtual = todayInput().slice(0, 7);
   const eventos = [
-    ...(resumo.data?.batidas ?? []).map(b => ({ id: b.id, quando: String(b.dataHora), titulo: `${String(b.tipo)} · ${formatDateTime(b.dataHora)}`, detalhe: `Origem: ${String(b.origem)}${b.simulado === "sim" ? " (simulada)" : ""}`, status: "Registrado", ocorrencia: null as OcorrenciaRow | null })),
+    ...(resumo.data?.batidas ?? []).map(b => ({ id: b.id, quando: String(b.dataHora), titulo: `${String(b.tipo)} · ${formatDateTime(b.dataHora)}`, detalhe: `Origem: ${String(b.origem)}${b.simulado === "sim" ? " (simulada)" : ""}${b.divergencia ? ` · ${String(b.divergencia)}` : ""}`, status: b.foraDeSequencia ? "Divergente" : "Registrado", ocorrencia: null as OcorrenciaRow | null })),
     ...(resumo.data?.ocorrencias ?? []).map(o => ({ id: o.id, quando: String(o.createdAt), titulo: `${String(o.tipo)} · ${formatDate(o.data)}`, detalhe: `${String(o.descricao)}${o.parecer ? ` — Parecer de ${String(o.analisadoPor ?? "gestor")}: ${String(o.parecer)}` : ""}`, status: String(o.status), ocorrencia: o as unknown as OcorrenciaRow })),
   ].sort((a, b) => b.quando.localeCompare(a.quando)).filter(e => periodo === "tudo" || e.quando.slice(0, 7) === mesAtual);
   const visiveis = completo ? eventos : eventos.slice(0, 6);
 
   return (
     <>
-      <PageHeader eyebrow="Minha área" title="Meu perfil" description="Seus dados, acessos, ponto e apontamentos pessoais."
+      <PageHeader eyebrow="Minha área" title="Meu perfil" description="Seus dados, acessos, histórico de ponto e apontamentos pessoais."
         actions={<><button type="button" className="button button--secondary" onClick={doLogout}><LogOut size={16} /> Sair</button><button type="button" className="button button--primary" onClick={() => setOcorrencia(true)}><Plus size={16} /> Novo apontamento</button></>} />
       <div className="profile-hero panel">
         <div className="profile-identity"><span className="profile-avatar">{initials(user?.nome)}</span><div><span className="panel-kicker">{user?.status === "Ativo" ? "Colaborador ativo" : user?.status}</span><h2>{user?.nome}</h2><p>{user?.email} · Matrícula {user?.matricula} · {user?.setor} · {user?.perfil}</p></div></div>
@@ -212,13 +199,12 @@ export default function MeuPerfilPage() {
             {PERMISSION_KEYS.every(key => !can(key)) && <EmptyState>Nenhum módulo liberado além do seu perfil. Peça acesso ao administrador.</EmptyState>}
           </div>
         </section>
-        <section className="panel profile-score-panel" aria-label="Registrar meu ponto">
-          <div className="panel-heading"><div><span className="panel-kicker">Meu ponto</span><h2>Registrar agora</h2></div><Clock3 size={18} color="var(--teal-dark)" /></div>
-          <label className="modal-field"><span>Origem</span><select value={origem} onChange={e => setOrigem(e.target.value as typeof origem)}><option value="Rede local">Rede local (simulada)</option><option value="GPS">GPS (simulado)</option><option value="Manual">Manual</option></select></label>
-          <div className="erp-ponto-buttons">
-            {(["Entrada", "Início de intervalo", "Fim de intervalo", "Saída"] as const).map(tipo => <button type="button" key={tipo} className="button button--secondary button--compact" disabled={ponto.isPending} onClick={() => baterPonto(tipo)}>{tipo}</button>)}
-          </div>
-          <p className="erp-muted">Usa a sua matrícula ({user?.matricula}). A sequência é validada pelo servidor.</p>
+        {/* F0c (plano RH/Ponto v3): o ERP não registra ponto; a marcação oficial é feita no relógio (REP). */}
+        <section className="panel profile-score-panel" aria-label="Meu ponto">
+          <div className="panel-heading"><div><span className="panel-kicker">Meu ponto</span><h2>Marcação no relógio oficial</h2></div><Clock3 size={18} color="var(--teal-dark)" /></div>
+          <p>O ponto é registrado no <b>relógio oficial (REP)</b> da empresa. O ERP não registra marcações; aqui você acompanha o seu histórico.</p>
+          <p className="erp-muted">Esqueceu de bater ou precisa corrigir uma marcação? Registre uma ocorrência de ajuste para análise do RH.</p>
+          <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={() => setOcorrencia(true)}><Plus size={16} /> Registrar ocorrência de ajuste</button></div>
         </section>
       </div>
       <div className="profile-grid profile-grid--bottom">
