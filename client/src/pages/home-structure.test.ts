@@ -11,6 +11,7 @@ describe("portal home structure", () => {
     expect(headerEnd).toBeGreaterThan(-1);
     expect(technicalHero).toBeGreaterThan(headerEnd);
     expect(source).toContain("Projetos e engenharia");
+    expect(source).toContain('<Link href="/moldes-e-ferramentaria">Projetos e engenharia</Link>');
     expect(source).toContain("Aeronáutico");
     expect(source).toContain("Automotivo");
     expect(source).toContain("Construção civil");
