@@ -10,6 +10,9 @@ describe("ERP navigation actions", () => {
     expect(home).toContain('current.href === "/dashboard" ? <Dashboard');
     expect(home).toContain('onClick={handleHelp}');
     expect(home).toContain('onClick={handleProfileNavigation}');
+    expect(home).toContain('if (isLogged && user)');
+    expect(home).toContain('setAccessModal("record")');
+    expect(home).toContain('userRecord={user?.record}');
     expect(app).toContain('<Route path="/dashboard" component={Home} />');
   });
 });
