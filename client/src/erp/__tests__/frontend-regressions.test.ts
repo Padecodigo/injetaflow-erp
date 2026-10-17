@@ -103,4 +103,22 @@ describe("regressões do frontend (aceite PR #1)", () => {
     expect(read("client/src/erp/ErpLayout.tsx")).toContain("Sair");
     expect(read("client/src/erp/pages/MeuPerfilPage.tsx")).toContain("Sair");
   });
+
+  it("B23: toasts coerentes (limpa erro anterior, sem 'Ação autorizada' ao abrir, sem concordância errada)", () => {
+    const form = read("client/src/erp/components/RecordForm.tsx");
+    expect(form.indexOf("toast.dismiss()")).toBeGreaterThan(-1);
+    expect(form.indexOf("toast.dismiss()")).toBeLessThan(form.indexOf('toast.success(editing ? "Alterações salvas" : "Registro criado"'));
+    expect(read("client/src/erp/pages/LoginPage.tsx")).toContain("toast.dismiss()");
+    for (const file of walk(resolve(root, "client/src"))) {
+      const source = readFileSync(file, "utf8");
+      expect(source, file).not.toContain("Ação autorizada");
+      expect(source, file).not.toMatch(/Nova [a-zç ]+ criado\b/);
+    }
+  });
+
+  it("B25: nenhum texto promete acesso público a módulos do ERP", () => {
+    for (const file of walk(resolve(root, "client/src"))) {
+      expect(readFileSync(file, "utf8"), file).not.toContain("Acesso público continua disponível");
+    }
+  });
 });
