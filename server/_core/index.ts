@@ -7,18 +7,31 @@ import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { registerErpHttpRoutes } from "../erp/http";
+import { ensureSeed } from "../erp/seed";
+import { getRepository } from "../erp/store";
+import { configureTrustProxy, trailingSlashRedirect } from "../erp/net";
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.disable("x-powered-by");
+  configureTrustProxy(app);
+  app.use(trailingSlashRedirect);
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+  });
+  // anexos públicos (currículo/desenho) vão em base64 com no máximo 5 MB
+  app.use(express.json({ limit: "8mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
   app.get("/api/platform/config.js", (_req, res) => {
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
   });
   registerOAuthRoutes(app);
+  registerErpHttpRoutes(app);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -33,6 +46,8 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  await ensureSeed(getRepository());
 
   const port = Number(process.env.PORT || "3000");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");

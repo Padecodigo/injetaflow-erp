@@ -1,38 +1,56 @@
+import type { ComponentType } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
+import { PUBLIC_ROUTES, ERP_ROUTES, LOGIN_ROUTE } from "@shared/erp/routes";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import { SessionProvider } from "./erp/session";
+import { RequireAuth } from "./erp/guard";
+import LoginPage from "./erp/pages/LoginPage";
+import DashboardPage from "./erp/pages/DashboardPage";
+import RhPage from "./erp/pages/RhPage";
+import UsuariosPage from "./erp/pages/UsuariosPage";
+import ConfiguracoesPage from "./erp/pages/ConfiguracoesPage";
+import MeuPerfilPage from "./erp/pages/MeuPerfilPage";
+import {
+  EstoquePage, FinanceiroPage, ManutencaoPage, MateriaPrimaPage, MoldesPage, OrdensPage, PigmentosPage, ProducaoPage, QualidadePage, SolicitacoesPage,
+} from "./erp/pages/ModulePages";
+
+/** Página de cada rota privada. Toda rota em ERP_ROUTES passa por RequireAuth (B01/B04/B10). */
+export const ERP_PAGES: Record<string, ComponentType> = {
+  "/dashboard": DashboardPage,
+  "/producao": ProducaoPage,
+  "/ordens": OrdensPage,
+  "/qualidade": QualidadePage,
+  "/estoque": EstoquePage,
+  "/moldes": MoldesPage,
+  "/materia-prima": MateriaPrimaPage,
+  "/pigmentos": PigmentosPage,
+  "/manutencao": ManutencaoPage,
+  "/rh": RhPage,
+  "/financeiro": FinanceiroPage,
+  "/solicitacoes": SolicitacoesPage,
+  "/usuarios": UsuariosPage,
+  "/configuracoes": ConfiguracoesPage,
+  "/meu-perfil": MeuPerfilPage,
+};
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/cotacao" component={Home} />
-      <Route path="/trabalhe-conosco" component={Home} />
-      <Route path="/quem-somos" component={Home} />
-      <Route path="/produtos" component={Home} />
-      <Route path="/injecao-plastica" component={Home} />
-      <Route path="/moldes-e-ferramentaria" component={Home} />
-      <Route path="/materiais-e-pigmentos" component={Home} />
-      <Route path="/qualidade-institucional" component={Home} />
-      <Route path="/contato" component={Home} />
-      <Route path="/erp" component={Home} />
-      <Route path="/producao" component={Home} />
-      <Route path="/moldes" component={Home} />
-      <Route path="/materia-prima" component={Home} />
-      <Route path="/pigmentos" component={Home} />
-      <Route path="/estoque" component={Home} />
-      <Route path="/manutencao" component={Home} />
-      <Route path="/rh" component={Home} />
-      <Route path="/ordens" component={Home} />
-      <Route path="/financeiro" component={Home} />
-      <Route path="/usuarios" component={Home} />
-      <Route path="/meu-perfil" component={Home} />
-      <Route path="/configuracoes" component={Home} />
-      <Route path="/404" component={NotFound} />
+      {PUBLIC_ROUTES.map(path => <Route key={path} path={path} component={Home} />)}
+      <Route path={LOGIN_ROUTE} component={LoginPage} />
+      {ERP_ROUTES.map(route => {
+        const Page = ERP_PAGES[route.path];
+        return (
+          <Route key={route.path} path={route.path}>
+            <RequireAuth permission={route.permission}><Page /></RequireAuth>
+          </Route>
+        );
+      })}
       <Route component={NotFound} />
     </Switch>
   );
@@ -43,8 +61,11 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <SessionProvider>
+            {/* N08: o aviso não cobre mais a barra superior (busca, menu e conta) */}
+            <Toaster richColors position="bottom-right" closeButton />
+            <Router />
+          </SessionProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
