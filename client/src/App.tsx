@@ -62,7 +62,8 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <SessionProvider>
-            <Toaster richColors position="top-right" />
+            {/* N08: o aviso não cobre mais a barra superior (busca, menu e conta) */}
+            <Toaster richColors position="bottom-right" closeButton />
             <Router />
           </SessionProvider>
         </TooltipProvider>

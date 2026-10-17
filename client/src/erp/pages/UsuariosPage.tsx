@@ -167,12 +167,15 @@ export default function UsuariosPage() {
           <select aria-label="Filtrar por status" value={status} onChange={e => setStatus(e.target.value)}><option value="">Status: todos</option><option>Ativo</option><option>Inativo</option></select>
         </div>
         <div className="module-table-wrap">
-          <table className="module-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>
+          <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>
             {list.isLoading ? <tr><td colSpan={8}><Spinner /></td></tr> : rows.length === 0 ? <tr><td colSpan={8}><EmptyState>Nenhum usuário encontrado.</EmptyState></td></tr> : rows.map(row => (
               <tr key={row.id} data-testid="user-row" onDoubleClick={() => canEdit && setForm({ user: row })}>
                 <td className="module-primary"><span className="erp-primary-cell">{row.nome}{row.demo ? <DemoBadge /> : null}</span><small className="erp-muted erp-block">{row.email}</small></td>
                 <td>{row.matricula}</td><td>{row.setor}</td><td>{row.perfil}</td>
-                <td className="muted-cell">{row.perfil === "Administrador" ? "Todos" : Object.keys(row.permissoes).map(k => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS]).join(", ") || "Só Meu perfil"}</td>
+                {(() => {
+                  const modulos = row.perfil === "Administrador" ? "Todos" : Object.keys(row.permissoes).map(k => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS]).join(", ") || "Só Meu perfil";
+                  return <td className="muted-cell users-modules" title={modulos}><span>{modulos}</span></td>;
+                })()}
                 <td className="muted-cell">{row.ultimoAcesso ? formatDateTime(row.ultimoAcesso) : "Nunca"}</td>
                 <td><StatusPill label={row.status} /></td>
                 <td>{canEdit && <RowMenu label={row.nome} actions={[
