@@ -1,0 +1,2 @@
+# Fixtures do AFD: bytes exatos (ISO 8859-1 + CR LF); o git não deve normalizar fim de linha.
+*.txt -text
