@@ -15,6 +15,7 @@
     "dev:static": "vite --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
     "build:static": "vite build",
     "erp:reset-senha": "tsx tools/reset-admin-password.ts",
+    "erp:restaurar-usuario": "tsx tools/restaurar-usuario.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"

@@ -5,6 +5,8 @@ export type UserStatus = "Ativo" | "Inativo";
 export type UserData = {
   nome: string;
   email: string;
+  /** Nome de usuário único por empresa (minúsculas). */
+  username?: string;
   senhaHash: string;
   setor: string;
   perfil: string;
@@ -20,6 +22,7 @@ export type SessionUser = {
   empresaId: string;
   nome: string;
   email: string;
+  username?: string;
   setor: string;
   perfil: string;
   matricula: string;

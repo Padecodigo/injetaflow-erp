@@ -21,7 +21,7 @@ export default function LoginPage() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const login = trpc.auth.login.useMutation();
-  const [email, setEmail] = useState("");
+  const [identificador, setIdentificador] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
     event.preventDefault();
     setError(null);
     try {
-      const me = await login.mutateAsync({ email, password });
+      const me = await login.mutateAsync({ identificador: identificador.trim(), password });
       toast.dismiss();
       utils.auth.me.setData(undefined, me);
       toast.success("Sessão iniciada", { description: `${me.nome} · ${me.perfil}` });
@@ -51,11 +51,11 @@ export default function LoginPage() {
         <img src="/tenant/wamovale-logo.jpg" alt="Wamovale" />
         <span className="portal-kicker">Área interna</span>
         <h1>Wamovale ERP</h1>
-        <p>Entre com seu e-mail corporativo e senha para acessar seus módulos, seu ponto e seus dados.</p>
-        <label className="modal-field"><span><Mail size={12} /> E-mail corporativo</span><input name="email" type="email" autoComplete="username" required autoFocus value={email} onChange={event => setEmail(event.target.value)} placeholder="voce@empresa.com.br" /></label>
+        <p>Entre com seu e-mail, nome de usuário ou matrícula e a senha para acessar seus módulos, seu ponto e seus dados.</p>
+        <label className="modal-field"><span><Mail size={12} /> E-mail, usuário ou matrícula</span><input name="identificador" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoFocus value={identificador} onChange={event => setIdentificador(event.target.value)} placeholder="ex.: admin, voce@empresa.com.br ou ADM-0001" /></label>
         <label className="modal-field"><span><KeyRound size={12} /> Senha</span><input name="password" type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} placeholder="Sua senha" /></label>
         {error && <div className="erp-form-error" role="alert">{error}</div>}
-        <button className="button button--portal erp-login-submit" type="submit" disabled={login.isPending || !email || !password}>
+        <button className="button button--portal erp-login-submit" type="submit" disabled={login.isPending || !identificador.trim() || !password}>
           {login.isPending ? <Loader2 size={16} className="erp-spin" /> : <KeyRound size={16} />} Entrar
         </button>
         <div className="modal-hint"><LockKeyhole size={14} /> O acesso abre somente os módulos liberados para o seu perfil. Esqueceu a senha? Fale com o administrador do sistema.</div>

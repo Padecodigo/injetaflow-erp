@@ -4,6 +4,7 @@ import type { TrpcContext } from "../../_core/context";
 import { MemoryRepository, type DataRepository } from "../repository";
 import { getUserFromToken, resetLoginLimiter, SESSION_COOKIE } from "../auth";
 import { createUser } from "../users";
+import { generatePassword } from "../password";
 import { resetPublicRate } from "../publico";
 
 export type CookieJar = { set: Record<string, { value: string; options: Record<string, unknown> }>; cleared: { name: string; options: Record<string, unknown> }[] };
@@ -33,7 +34,9 @@ export async function callerFor(repo: DataRepository, token?: string | null, ip?
   return { caller: appRouter.createCaller(ctx), jar, ctx };
 }
 
-export const ADMIN = { email: "admin@teste.local", senha: "Senha-Admin-123" };
+// senhas de teste geradas a cada execução (nenhuma senha fixa no repositório)
+export const ADMIN = { email: "admin@teste.local", senha: generatePassword(14) };
+export const USER_SENHA = generatePassword(14);
 
 export async function setup(empresaId = "empresa-a") {
   resetLoginLimiter();
@@ -53,7 +56,7 @@ export async function login(repo: DataRepository, email: string, senha: string) 
 }
 
 export async function createAndLogin(repo: DataRepository, empresaId: string, opts: { email: string; perfil?: string; permissoes?: Permissions; matricula?: string }) {
-  const senha = "Senha-Usuario-123";
+  const senha = USER_SENHA;
   await createUser(repo, null, empresaId, { nome: `Usuário ${opts.email}`, email: opts.email, senha, setor: "Produção", perfil: (opts.perfil ?? "Operador") as "Operador", matricula: opts.matricula ?? `MAT-${opts.email.slice(0, 4).toUpperCase()}`, permissoes: opts.permissoes ?? {}, status: "Ativo" });
   return login(repo, opts.email, senha);
 }

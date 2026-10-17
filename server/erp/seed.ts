@@ -5,7 +5,9 @@ import { USERS } from "./auth";
 import { generatePassword } from "./password";
 import { createRecord, createMovement } from "./records";
 import { registrarPonto } from "./rh";
-import { createUser } from "./users";
+import { createUser, migrateUsernames } from "./users";
+import { AUTOR_INICIALIZACAO } from "./audit";
+import { PASSWORD_MIN_LENGTH } from "@shared/erp/account";
 import { DEFAULT_EMPRESA_ID } from "./store";
 
 export type SeedResult = { adminCreated: boolean; adminEmail?: string; generatedPassword?: string; demoSeeded: boolean; demoUsers?: string[]; generatedDemoPassword?: string };
@@ -35,23 +37,29 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
   const log = opts.log ?? (message => console.log(message));
   const result: SeedResult = { adminCreated: false, demoSeeded: false };
 
+  // migração automática do store: usuários antigos sem nome de usuário recebem um (admin inicial → "admin")
+  const adminUsername = (env.INJETAFLOW_ADMIN_USERNAME || "admin").trim().toLowerCase();
+  const { migrated } = await migrateUsernames(repo, { adminUsername });
+  if (migrated > 0) log(`[InjetaFlow] Migração: ${migrated} usuário(s) receberam nome de usuário (o administrador inicial recebeu "${adminUsername}" se estava livre).`);
+
   const { total: users } = await repo.list<UserData>(USERS, empresaId, { includeDeleted: true, limit: 1 });
   let admin: SessionUser | null = null;
   if (users === 0) {
     const email = (env.INJETAFLOW_ADMIN_EMAIL || "admin@wamovale.local").trim().toLowerCase();
     const fromEnv = env.INJETAFLOW_ADMIN_PASSWORD;
-    if (fromEnv && fromEnv.length < 8) throw new Error("INJETAFLOW_ADMIN_PASSWORD precisa ter pelo menos 8 caracteres.");
+    if (fromEnv && fromEnv.length < PASSWORD_MIN_LENGTH) throw new Error(`INJETAFLOW_ADMIN_PASSWORD precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
     const senha = fromEnv || generatePassword(16);
     admin = await createUser(repo, null, empresaId, {
       nome: "Administrador Wamovale",
       email,
+      username: adminUsername,
       senha,
       setor: "Administrativo",
       perfil: "Administrador",
       matricula: "ADM-0001",
       permissoes: PERFIL_PRESETS.Administrador,
       status: "Ativo",
-    });
+    }, { autor: AUTOR_INICIALIZACAO });
     result.adminCreated = true;
     result.adminEmail = email;
     if (!fromEnv) {
@@ -60,7 +68,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
         [
           "",
           "==================== InjetaFlow: administrador inicial ====================",
-          `  E-mail: ${email}`,
+          `  Usuário: ${adminUsername}   (ou e-mail ${email}, ou matrícula ADM-0001)`,
           `  Senha gerada (mostrada só agora, troque em Meu perfil): ${senha}`,
           "  Para definir a senha você mesmo, use INJETAFLOW_ADMIN_PASSWORD antes do 1º start.",
           "===========================================================================",
@@ -68,7 +76,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
         ].join("\n")
       );
     } else {
-      log(`[InjetaFlow] Administrador inicial criado: ${email} (senha definida por INJETAFLOW_ADMIN_PASSWORD).`);
+      log(`[InjetaFlow] Administrador inicial criado: usuário "${adminUsername}" / ${email} (senha definida por INJETAFLOW_ADMIN_PASSWORD).`);
     }
   }
 
@@ -82,10 +90,10 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
       await seedDemo(repo, { ...actor, nome: "Carga de demonstração" });
       if (result.adminCreated) {
         const fromEnvDemo = env.INJETAFLOW_DEMO_PASSWORD;
-        if (fromEnvDemo && fromEnvDemo.length < 8) throw new Error("INJETAFLOW_DEMO_PASSWORD precisa ter pelo menos 8 caracteres.");
+        if (fromEnvDemo && fromEnvDemo.length < PASSWORD_MIN_LENGTH) throw new Error(`INJETAFLOW_DEMO_PASSWORD precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
         const demoSenha = fromEnvDemo || generatePassword(16);
         for (const u of DEMO_USERS) {
-          await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" });
+          await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" }, { autor: AUTOR_INICIALIZACAO });
         }
         result.demoUsers = DEMO_USERS.map(u => u.email);
         if (!fromEnvDemo) result.generatedDemoPassword = demoSenha;
@@ -93,7 +101,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
           [
             "",
             "------------- InjetaFlow: usuários de DEMONSTRAÇÃO (um por perfil) -------------",
-            ...DEMO_USERS.map(u => `  ${u.perfil.padEnd(10)} ${u.email}`),
+            ...DEMO_USERS.map(u => `  ${u.perfil.padEnd(10)} ${u.email}  (usuário ${u.email.split("@")[0]})`),
             fromEnvDemo ? "  Senha: a definida em INJETAFLOW_DEMO_PASSWORD." : `  Senha (mostrada só agora): ${demoSenha}`,
             "--------------------------------------------------------------------------------",
             "",

@@ -437,6 +437,23 @@ export function hasPermission(
   return granted === "editar";
 }
 
+/**
+ * R-01: módulos do alvo que excedem os de quem edita (nível maior ou módulo que ele não tem).
+ * Lista vazia = as permissões do alvo são um subconjunto das de quem edita.
+ * Administrador (alvo) nunca é subconjunto de um não administrador.
+ */
+export function permissionsBeyond(
+  actor: { perfil?: string | null; permissoes?: Permissions | null } | null | undefined,
+  target: { perfil?: string | null; permissoes?: Permissions | null }
+): PermissionKey[] {
+  if (isAdminPerfil(actor?.perfil)) return [];
+  if (isAdminPerfil(target.perfil)) return [...PERMISSION_KEYS];
+  return PERMISSION_KEYS.filter(key => {
+    const level = target.permissoes?.[key];
+    return level === "ver" || level === "editar" ? !hasPermission(actor, key, level) : false;
+  });
+}
+
 export const COLUMN_LABELS: Record<string, string> = {
   progresso: "Progresso",
   createdAt: "Registrado em",
