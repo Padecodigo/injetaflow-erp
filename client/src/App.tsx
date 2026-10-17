@@ -20,6 +20,7 @@ function Router() {
       <Route path="/qualidade-institucional" component={Home} />
       <Route path="/contato" component={Home} />
       <Route path="/erp" component={Home} />
+      <Route path="/dashboard" component={Home} />
       <Route path="/producao" component={Home} />
       <Route path="/moldes" component={Home} />
       <Route path="/materia-prima" component={Home} />
