@@ -86,7 +86,10 @@ export const authRouter = router({
     return { success: true } as const;
   }),
   changePassword: protectedProcedure
-    .input(z.object({ atual: z.string().min(1, "Informe a senha atual"), nova: z.string().min(PASSWORD_MIN_LENGTH, `Nova senha: ${PASSWORD_MIN_MESSAGE}`).max(PASSWORD_MAX_LENGTH) }))
+    .input(z.object({
+      atual: z.string({ error: "Informe a senha atual." }).min(1, "Informe a senha atual."),
+      nova: z.string({ error: "Informe a nova senha." }).min(PASSWORD_MIN_LENGTH, `Nova senha: ${PASSWORD_MIN_MESSAGE}.`).max(PASSWORD_MAX_LENGTH, `Nova senha: máximo de ${PASSWORD_MAX_LENGTH} caracteres.`),
+    }, { error: "Informe a senha atual e a nova senha." }))
     .mutation(async ({ ctx, input }) => {
       const record = await ctx.repo.get<UserData>(USERS, ctx.user.empresaId, ctx.user.id);
       if (!record || !verifyPassword(input.atual, record.data.senhaHash)) throw new TRPCError({ code: "BAD_REQUEST", message: "Senha atual incorreta." });
@@ -246,7 +249,7 @@ export const perfilRouter = router({
   // Meu perfil: o próprio usuário só troca o nome de usuário (senha em auth.changePassword).
   // Matrícula, perfil, setor e permissões são recusados no servidor (FORBIDDEN).
   atualizarConta: protectedProcedure
-    .input(z.record(z.string(), z.unknown()))
+    .input(z.record(z.string(), z.unknown(), { error: "Informe o nome de usuário." }))
     .mutation(({ ctx, input }) => updateOwnAccount(ctx.repo, ctx.user, input)),
   registrarPonto: protectedProcedure
     .input(pontoInput.omit({ matricula: true }))

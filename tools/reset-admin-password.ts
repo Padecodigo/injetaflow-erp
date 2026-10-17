@@ -23,8 +23,8 @@ import { isAdminPerfil } from "../shared/erp/modules";
 import { getRepository, DEFAULT_EMPRESA_ID } from "../server/erp/store";
 import { USERS, destroyUserSessions, findLoginCandidates, hashUserPassword } from "../server/erp/auth";
 import { generatePassword } from "../server/erp/password";
-import { assertUsernameFree, migrateUsernames } from "../server/erp/users";
-import { audit } from "../server/erp/audit";
+import { assertUsernameFree, listDeletedUsers, migrateUsernames } from "../server/erp/users";
+import { AUTOR_CLI, audit, systemActor } from "../server/erp/audit";
 import type { UserData } from "../server/erp/types";
 
 export function parseArgs(argv: string[]) {
@@ -70,6 +70,14 @@ async function main() {
     user = items[0];
   }
   if (!user) {
+    if (identificador) {
+      const wanted = identificador.trim().toLowerCase();
+      const excluidos = (await listDeletedUsers(repo, empresaId)).filter(u => [u.data.email, u.data.username, u.data.matricula].some(v => String(v ?? "").toLowerCase() === wanted));
+      if (excluidos.length) {
+        console.error(`"${identificador}" foi excluído. Restaure antes com: pnpm erp:restaurar-usuario ${identificador}`);
+        process.exit(1);
+      }
+    }
     console.error(`Usuário ${identificador ? `"${identificador}"` : "administrador"} não encontrado em ${empresaId}. Rode "pnpm dev" uma vez para criar o administrador inicial.`);
     process.exit(1);
   }
@@ -81,9 +89,9 @@ async function main() {
   }
   const senha = args.manterSenha ? null : fromEnv || generatePassword(16);
   if (senha) patch.senhaHash = hashUserPassword(senha);
-  await repo.update<UserData>(USERS, empresaId, user.id, patch, { id: "cli", nome: "Linha de comando", matricula: null });
+  await repo.update<UserData>(USERS, empresaId, user.id, patch, systemActor(AUTOR_CLI));
   if (senha) await destroyUserSessions(repo, user.id);
-  await audit(repo, empresaId, null, { acao: "editar", modulo: "usuarios", registroId: user.id, resumo: `Linha de comando: ${[senha ? "senha redefinida" : null, patch.username ? `nome de usuário "${patch.username}"` : null, "reativado"].filter(Boolean).join(", ")} (${user.data.email})` });
+  await audit(repo, empresaId, null, { autor: AUTOR_CLI, acao: "editar", modulo: "usuarios", registroId: user.id, resumo: `Linha de comando: ${[senha ? "senha redefinida" : null, patch.username ? `nome de usuário "${patch.username}"` : null, "reativado"].filter(Boolean).join(", ")} (${user.data.email})` });
 
   const username = patch.username ?? user.data.username;
   console.log(`Usuário atualizado: ${user.data.nome} · e-mail ${user.data.email} · usuário "${username}" · matrícula ${user.data.matricula}.`);

@@ -29,6 +29,7 @@ Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o se
 - `pnpm lint` / `pnpm check` / `pnpm test`: ESLint, TypeScript e testes (Vitest).
 - `pnpm test:e2e`: testes ponta a ponta (Playwright; sobe o app na porta 3100 com dados descartáveis em `.data-e2e`). Na primeira vez: `pnpm exec playwright install chromium`.
 - `pnpm erp:reset-senha [e-mail | usuário | matrícula] [--username novo] [--manter-senha]`: redefine a senha (e opcionalmente o nome de usuário) de um usuário local.
+- `pnpm erp:restaurar-usuario [--listar | e-mail | usuário | matrícula | id]`: restaura um usuário excluído logicamente.
 
 ## Login, nome de usuário e Meu perfil
 
@@ -36,7 +37,13 @@ Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o se
 - **Nome de usuário** (`username`): único por empresa, sem diferenciar maiúsculas, 3 a 40 caracteres (`a-z`, `0-9`, `.`, `_`, `-`) e não pode coincidir com a matrícula de outra pessoa. Na primeira subida desta versão, os dados existentes são migrados automaticamente, sem perda: cada usuário recebe um nome de usuário derivado do e-mail (`maria.silva@...` → `maria.silva`) e o administrador mais antigo de cada empresa recebe `admin`. Uma instalação nova já cria o admin com usuário `admin`.
 - **Senha:** mínimo de 6 caracteres (cadastro, troca, redefinição e script).
 - **Meu perfil:** cada pessoa troca a própria senha (a senha atual é obrigatória) e o próprio nome de usuário. Matrícula, e-mail, perfil, setor e permissões aparecem só para leitura, e o servidor também recusa essas alterações.
-- **Usuários (administrador):** o administrador altera qualquer campo de qualquer usuário: matrícula, usuário, e-mail, perfil, setor, módulos, status e redefinição de senha. Outros perfis com permissão de editar usuários não alteram matrícula, não editam administradores e não concedem o perfil Administrador. Toda alteração é auditada (antes → depois; a senha nunca aparece).
+- **Usuários (administrador):** o administrador altera qualquer campo de qualquer usuário: matrícula, usuário, e-mail, perfil, setor, módulos, status e redefinição de senha. Toda alteração é auditada (antes → depois, inclusive quais módulos entraram ou saíram; a senha nunca aparece).
+- **Regras contra escalada de privilégio** (valem no servidor, em criar, editar e excluir; a tela só reflete):
+  - só o Administrador cria, edita, desativa ou exclui administradores e atribui o perfil Administrador (para os demais, a opção nem aparece e as ações na linha do admin ficam desabilitadas);
+  - quem não é administrador e tem "Usuários: editar" não altera matrícula e só concede módulos que ele próprio possui, no mesmo nível ("ver" se ele só vê); módulos que a pessoa já tinha continuam;
+  - ninguém altera o próprio perfil, módulos ou status, nem o administrador (peça a outro administrador); ninguém exclui o próprio usuário;
+  - a empresa nunca fica sem administrador ativo: o último não pode ser excluído, desativado nem rebaixado.
+- Na auditoria, ações sem sessão aparecem com o autor certo: **Sistema (migração)**, **Sistema (inicialização)** (1º start) e **Linha de comando** (scripts).
 - O apontamento rápido da produção por matrícula continua separado e não abre sessão no ERP.
 
 ## Redefinir senha e usuário do admin
@@ -53,7 +60,18 @@ unset INJETAFLOW_ADMIN_PASSWORD
 - O identificador pode ser e-mail, nome de usuário ou matrícula. Sem ele, o script usa o administrador mais antigo (ou `INJETAFLOW_RESET_USER`).
 - `--username novo` (ou `INJETAFLOW_ADMIN_USERNAME`) define o nome de usuário. `--manter-senha` troca só o nome de usuário.
 - A senha vinda de `INJETAFLOW_ADMIN_PASSWORD` **nunca** é impressa. Sem essa variável, o script gera uma senha forte e mostra uma única vez.
-- O script também reativa a conta e registra a ação na auditoria.
+- O script também reativa a conta e registra a ação na auditoria (autor "Linha de comando").
+
+## Restaurar um usuário excluído
+
+A exclusão é lógica (nada é apagado). Para trazer de volta alguém excluído por engano, inclusive um administrador, pare o `pnpm dev` e rode:
+
+```bash
+pnpm erp:restaurar-usuario --listar          # mostra os excluídos (id, e-mail, usuário, matrícula, quando e por quem)
+pnpm erp:restaurar-usuario ADM-0001          # restaura por e-mail, nome de usuário, matrícula ou id
+```
+
+Ele recusa a restauração se o e-mail ou a matrícula já estiverem com outra pessoa ativa. Se o nome de usuário antigo foi reaproveitado, gera outro livre. A senha e o status anteriores são mantidos; para trocar a senha depois, use `pnpm erp:reset-senha <identificador>`. A restauração vai para a auditoria com o autor "Linha de comando".
 
 ## Arquitetura do MVP
 

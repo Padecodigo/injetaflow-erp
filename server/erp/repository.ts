@@ -45,6 +45,8 @@ export interface DataRepository {
   update<T = Record<string, unknown>>(collection: string, empresaId: string, id: string, patch: Partial<T>, actor?: Actor | null): Promise<StoredRecord<T> | null>;
   /** Exclusão lógica: o registro some das listas, mas continua guardado. */
   softDelete(collection: string, empresaId: string, id: string, actor?: Actor | null): Promise<boolean>;
+  /** Desfaz a exclusão lógica (o registro volta às listas). */
+  restore(collection: string, empresaId: string, id: string, actor?: Actor | null): Promise<boolean>;
   /** Busca sem filtro de empresa. Uso restrito a login/sessão (descobrir a empresa do usuário). */
   findGlobal<T = Record<string, unknown>>(collection: string, predicate: (data: T, record: StoredRecord<T>) => boolean): Promise<StoredRecord<T> | null>;
   /** Como findGlobal, mas devolve todos os registros que atendem (login por usuário/matrícula). */
@@ -120,6 +122,17 @@ export class MemoryRepository implements DataRepository {
     if (!row) return false;
     row.deletedAt = new Date().toISOString();
     row.deletedBy = actor;
+    this.persist();
+    return true;
+  }
+
+  async restore(collection: string, empresaId: string, id: string, actor: Actor | null = null): Promise<boolean> {
+    const row = this.bucket(collection).find(item => item.id === id && item.empresaId === empresaId && item.deletedAt);
+    if (!row) return false;
+    row.deletedAt = null;
+    row.deletedBy = null;
+    row.updatedAt = new Date().toISOString();
+    row.updatedBy = actor;
     this.persist();
     return true;
   }

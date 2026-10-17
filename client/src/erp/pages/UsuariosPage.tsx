@@ -23,9 +23,31 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   const create = trpc.usuarios.create.useMutation();
   const update = trpc.usuarios.update.useMutation();
   const editing = Boolean(user);
-  const { user: me } = useSession();
+  const { user: me, can } = useSession();
+  const meIsAdmin = me?.perfil === "Administrador";
   // só o administrador altera matrícula (o servidor também bloqueia)
-  const canEditMatricula = !editing || me?.perfil === "Administrador";
+  const canEditMatricula = !editing || meIsAdmin;
+  // P6-01: ninguém altera o próprio perfil, módulos ou status (o servidor também bloqueia)
+  const self = editing && user!.id === me?.id;
+  const original = user?.permissoes ?? {};
+  /** Quem não é administrador só concede módulos que possui (no mesmo nível); o que a pessoa já tinha continua. */
+  const canGrant = (key: (typeof PERMISSION_KEYS)[number], level: "ver" | "editar") => {
+    if (meIsAdmin) return true;
+    const before = original[key];
+    if (before === "editar" || before === level) return true;
+    return can(key, level);
+  };
+  const clip = (perms: Permissions): Permissions => {
+    const out: Permissions = {};
+    for (const key of PERMISSION_KEYS) {
+      const level = perms[key];
+      if (!level) continue;
+      if (canGrant(key, level)) out[key] = level;
+      else if (level === "editar" && canGrant(key, "ver")) out[key] = "ver";
+    }
+    return out;
+  };
+  const perfisDisponiveis = PERFIS.filter(p => meIsAdmin || p !== "Administrador");
   const [username, setUsername] = useState(user?.username ?? "");
   const [nome, setNome] = useState(user?.nome ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
@@ -34,14 +56,14 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   const [perfil, setPerfil] = useState<Perfil>((user?.perfil as Perfil) ?? "Operador");
   const [status, setStatus] = useState<"Ativo" | "Inativo">(user?.status ?? "Ativo");
   const [senha, setSenha] = useState("");
-  const [permissoes, setPermissoes] = useState<Permissions>(user?.permissoes ?? PERFIL_PRESETS.Operador);
+  const [permissoes, setPermissoes] = useState<Permissions>(() => user?.permissoes ?? clip(PERFIL_PRESETS.Operador));
   const [error, setError] = useState<string | null>(null);
   const busy = create.isPending || update.isPending;
   const isAdmin = perfil === "Administrador";
 
   const choosePerfil = (value: Perfil) => {
     setPerfil(value);
-    setPermissoes({ ...PERFIL_PRESETS[value] });
+    setPermissoes(clip({ ...PERFIL_PRESETS[value] }));
   };
 
   const submit = async (event: FormEvent) => {
@@ -49,7 +71,7 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     setError(null);
     try {
       if (editing) {
-        await update.mutateAsync({ id: user!.id, data: { nome, email, ...(username.trim() ? { username: username.trim() } : {}), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], perfil, status, permissoes, novaSenha: senha || undefined } });
+        await update.mutateAsync({ id: user!.id, data: { nome, email, ...(username.trim() ? { username: username.trim() } : {}), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], ...(self ? {} : { perfil, status, permissoes }), novaSenha: senha || undefined } });
       } else {
         await create.mutateAsync({ nome, email, username: username.trim() || undefined, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, senha });
       }
@@ -74,8 +96,8 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
           <label className="modal-field"><span>Nome de usuário {editing ? "*" : "(opcional)"}</span><input name="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={editing} minLength={USERNAME_MIN_LENGTH} maxLength={USERNAME_MAX_LENGTH} value={username} onChange={e => setUsername(e.target.value.toLowerCase())} placeholder={editing ? "" : "Em branco: gerado a partir do e-mail"} /><small className="erp-muted">Usado no login, junto com e-mail e matrícula. Único na empresa.</small></label>
           <label className="modal-field"><span>Matrícula *</span><input name="matricula" required readOnly={!canEditMatricula} aria-readonly={!canEditMatricula} value={matricula} onChange={e => setMatricula(e.target.value)} placeholder="Ex.: MAT-0042" />{!canEditMatricula && <small className="erp-muted">Somente o administrador altera a matrícula.</small>}</label>
           <label className="modal-field"><span>Setor *</span><select name="setor" value={setor} onChange={e => setSetor(e.target.value)}>{SETORES.map(s => <option key={s}>{s}</option>)}</select></label>
-          <label className="modal-field"><span>Perfil *</span><select name="perfil" value={perfil} onChange={e => choosePerfil(e.target.value as Perfil)}>{PERFIS.map(p => <option key={p}>{p}</option>)}</select></label>
-          <label className="modal-field"><span>Status</span><select name="status" value={status} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
+          <label className="modal-field"><span>Perfil *</span><select name="perfil" value={perfil} disabled={self} onChange={e => choosePerfil(e.target.value as Perfil)}>{(perfisDisponiveis.includes(perfil) ? perfisDisponiveis : [perfil, ...perfisDisponiveis]).map(p => <option key={p}>{p}</option>)}</select>{self ? <small className="erp-muted">Você não altera o próprio perfil, módulos ou status.</small> : !meIsAdmin && <small className="erp-muted">Somente o administrador concede o perfil Administrador.</small>}</label>
+          <label className="modal-field"><span>Status</span><select name="status" value={status} disabled={self} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
           <label className="modal-field erp-span-2"><span>{editing ? "Nova senha (deixe em branco para manter)" : "Senha inicial *"} </span>
             <span className="erp-inline">
               <input name="senha" type="text" autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
@@ -85,18 +107,18 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
           </label>
         </div>
         <div className="access-section">
-          <div className="access-section__heading"><div><span className="panel-kicker">Permissões por módulo</span><b>O que esta pessoa pode acessar?</b></div><span className="selection-count">{isAdmin ? "Administrador: acesso total" : `${selected.length} módulo(s)`}</span></div>
+          <div className="access-section__heading"><div><span className="panel-kicker">Permissões por módulo</span><b>O que esta pessoa pode acessar?</b></div>{!meIsAdmin && !self && <small className="erp-muted">Você só concede módulos que você mesmo possui.</small>}<span className="selection-count">{isAdmin ? "Administrador: acesso total" : `${selected.length} módulo(s)`}</span></div>
           <div className="erp-perm-grid">
             {PERMISSION_KEYS.map(key => (
               <label key={key} className={`module-check ${isAdmin || permissoes[key] ? "module-check--selected" : ""}`}>
                 <span>{PERMISSION_LABELS[key]}</span>
-                <select aria-label={`Permissão ${PERMISSION_LABELS[key]}`} disabled={isAdmin} value={isAdmin ? "editar" : permissoes[key] ?? ""} onChange={e => setPermissoes(current => {
+                <select aria-label={`Permissão ${PERMISSION_LABELS[key]}`} disabled={isAdmin || self} value={isAdmin ? "editar" : permissoes[key] ?? ""} onChange={e => setPermissoes(current => {
                   const next = { ...current };
                   if (e.target.value) next[key] = e.target.value as "ver" | "editar";
                   else delete next[key];
                   return next;
                 })}>
-                  <option value="">Sem acesso</option><option value="ver">Ver</option><option value="editar">Ver e editar</option>
+                  <option value="">Sem acesso</option><option value="ver" disabled={!canGrant(key, "ver")}>Ver</option><option value="editar" disabled={!canGrant(key, "editar")}>Ver e editar</option>
                 </select>
               </label>
             ))}
@@ -128,6 +150,8 @@ export default function UsuariosPage() {
   const list = trpc.usuarios.list.useQuery({ search: search || undefined, perfil: perfil || undefined, status: status || undefined, page, pageSize: 10 }, { placeholderData: p => p });
   const update = trpc.usuarios.update.useMutation();
   const remove = trpc.usuarios.remove.useMutation();
+  // P6-01: só o administrador edita, desativa ou exclui administradores (o servidor também bloqueia)
+  const protegido = (row: UserRow) => row.perfil === "Administrador" && me?.perfil !== "Administrador";
   const exportCsv = trpc.usuarios.exportCsv.useMutation();
 
   const toggleStatus = async (row: UserRow) => {
@@ -175,7 +199,7 @@ export default function UsuariosPage() {
         <div className="module-table-wrap">
           <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>
             {list.isLoading ? <tr><td colSpan={8}><Spinner /></td></tr> : rows.length === 0 ? <tr><td colSpan={8}><EmptyState>Nenhum usuário encontrado.</EmptyState></td></tr> : rows.map(row => (
-              <tr key={row.id} data-testid="user-row" onDoubleClick={() => canEdit && setForm({ user: row })}>
+              <tr key={row.id} data-testid="user-row" onDoubleClick={() => canEdit && !protegido(row) && setForm({ user: row })}>
                 <td className="module-primary"><span className="erp-primary-cell">{row.nome}{row.demo ? <DemoBadge /> : null}</span><small className="erp-muted erp-block users-email">{row.email}</small>{row.username ? <small className="erp-muted erp-block users-username" title="Nome de usuário">@{row.username}</small> : null}</td>
                 <td>{row.matricula}</td><td>{row.setor}</td><td>{row.perfil}</td>
                 {(() => {
@@ -185,9 +209,9 @@ export default function UsuariosPage() {
                 <td className="muted-cell">{row.ultimoAcesso ? formatDateTime(row.ultimoAcesso) : "Nunca"}</td>
                 <td><StatusPill label={row.status} /></td>
                 <td>{canEdit && <RowMenu label={row.nome} actions={[
-                  { label: "Editar", onSelect: () => setForm({ user: row }), icon: <Pencil size={14} /> },
-                  { label: row.status === "Ativo" ? "Desativar" : "Reativar", onSelect: () => toggleStatus(row), disabled: row.id === me?.id, icon: row.status === "Ativo" ? <UserX size={14} /> : <UserCheck size={14} /> },
-                  { label: "Excluir", onSelect: () => setRemoving(row), danger: true, disabled: row.id === me?.id, icon: <Trash2 size={14} /> },
+                  { label: "Editar", onSelect: () => setForm({ user: row }), disabled: protegido(row), icon: <Pencil size={14} /> },
+                  { label: row.status === "Ativo" ? "Desativar" : "Reativar", onSelect: () => toggleStatus(row), disabled: row.id === me?.id || protegido(row), icon: row.status === "Ativo" ? <UserX size={14} /> : <UserCheck size={14} /> },
+                  { label: "Excluir", onSelect: () => setRemoving(row), danger: true, disabled: row.id === me?.id || protegido(row), icon: <Trash2 size={14} /> },
                 ]} />}</td>
               </tr>
             ))}

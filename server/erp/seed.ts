@@ -6,6 +6,7 @@ import { generatePassword } from "./password";
 import { createRecord, createMovement } from "./records";
 import { registrarPonto } from "./rh";
 import { createUser, migrateUsernames } from "./users";
+import { AUTOR_INICIALIZACAO } from "./audit";
 import { PASSWORD_MIN_LENGTH } from "@shared/erp/account";
 import { DEFAULT_EMPRESA_ID } from "./store";
 
@@ -58,7 +59,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
       matricula: "ADM-0001",
       permissoes: PERFIL_PRESETS.Administrador,
       status: "Ativo",
-    });
+    }, { autor: AUTOR_INICIALIZACAO });
     result.adminCreated = true;
     result.adminEmail = email;
     if (!fromEnv) {
@@ -92,7 +93,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
         if (fromEnvDemo && fromEnvDemo.length < PASSWORD_MIN_LENGTH) throw new Error(`INJETAFLOW_DEMO_PASSWORD precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
         const demoSenha = fromEnvDemo || generatePassword(16);
         for (const u of DEMO_USERS) {
-          await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" });
+          await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" }, { autor: AUTOR_INICIALIZACAO });
         }
         result.demoUsers = DEMO_USERS.map(u => u.email);
         if (!fromEnvDemo) result.generatedDemoPassword = demoSenha;

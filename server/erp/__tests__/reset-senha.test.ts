@@ -8,6 +8,8 @@ import { USERS } from "../auth";
 import { generatePassword, hashPassword, verifyPassword } from "../password";
 import type { UserData } from "../types";
 import { parseArgs } from "../../../tools/reset-admin-password";
+import { parseRestoreArgs } from "../../../tools/restaurar-usuario";
+import type { AuditEntry } from "../audit";
 
 const root = path.resolve(__dirname, "../../..");
 const tsx = path.join(root, "node_modules", ".bin", "tsx");
@@ -22,13 +24,13 @@ function storeAntigo() {
   return { dir, repo };
 }
 
-function run(dir: string, args: string[], env: Record<string, string> = {}) {
+function run(dir: string, args: string[], env: Record<string, string> = {}, script = "tools/reset-admin-password.ts") {
   const childEnv: NodeJS.ProcessEnv = { ...process.env, INJETAFLOW_DATA_DIR: dir, NODE_ENV: "development", ...env };
   delete childEnv.VITEST;
   delete childEnv.INJETAFLOW_ADMIN_PASSWORD;
   delete childEnv.INJETAFLOW_ADMIN_USERNAME;
   Object.assign(childEnv, env);
-  return execFileSync(tsx, ["tools/reset-admin-password.ts", ...args], { cwd: root, env: childEnv, encoding: "utf8" });
+  return execFileSync(tsx, [script, ...args], { cwd: root, env: childEnv, encoding: "utf8" });
 }
 
 const ler = (dir: string) => new JsonFileRepository(path.join(dir, "injetaflow.json"));
@@ -75,4 +77,32 @@ describe("pnpm erp:reset-senha (identificador flexível + username)", () => {
     expect(() => run(dir, [], { INJETAFLOW_ADMIN_PASSWORD: generatePassword(5) })).toThrow();
     expect(() => run(dir, ["--username", "nome com espaço"])).toThrow();
   }, 30000);
+});
+
+describe("P6-02 / P6-06: autor 'Linha de comando' e pnpm erp:restaurar-usuario", () => {
+  it("reset grava a auditoria com autor 'Linha de comando'", async () => {
+    const { dir, repo } = storeAntigo();
+    await repo.insert<UserData>(USERS, "wamovale", { nome: "Admin", email: "adm@wamovale.local", username: "admin", senhaHash: hashPassword(generatePassword(12)), setor: "Administrativo", perfil: "Administrador", matricula: "ADM-0001", permissoes: {}, status: "Ativo", ultimoAcesso: null });
+    run(dir, ["admin"], { INJETAFLOW_ADMIN_PASSWORD: generatePassword(8) });
+    const { items } = await ler(dir).list<AuditEntry>("auditoria", "wamovale");
+    expect(items[0].data.usuario).toBe("Linha de comando");
+    expect(JSON.stringify(items)).not.toContain("Portal público");
+  }, 30000);
+
+  it("restaura o admin excluído (lista, restaura por matrícula, audita) e o reset indica o caminho", async () => {
+    expect(parseRestoreArgs(["--listar"])).toEqual({ identificador: undefined, listar: true });
+    expect(() => parseRestoreArgs([])).toThrow(/Informe/);
+    const { dir, repo } = storeAntigo();
+    const adm = await repo.insert<UserData>(USERS, "wamovale", { nome: "Administrador Wamovale", email: "adm@wamovale.local", username: "admin", senhaHash: hashPassword(generatePassword(12)), setor: "Administrativo", perfil: "Administrador", matricula: "ADM-0001", permissoes: {}, status: "Ativo", ultimoAcesso: null });
+    await repo.softDelete(USERS, "wamovale", adm.id, { id: "x", nome: "Gestora", matricula: null });
+    expect(() => run(dir, ["admin"], { INJETAFLOW_ADMIN_PASSWORD: generatePassword(8) })).toThrow(/erp:restaurar-usuario/);
+    expect(run(dir, ["--listar"], {}, "tools/restaurar-usuario.ts")).toMatch(/Administrador Wamovale .*matrícula ADM-0001/);
+    const out = run(dir, ["adm-0001"], {}, "tools/restaurar-usuario.ts");
+    expect(out).toMatch(/Usuário restaurado: Administrador Wamovale/);
+    const depois = ler(dir);
+    expect((await depois.get<UserData>(USERS, "wamovale", adm.id))?.data.username).toBe("admin");
+    const { items } = await depois.list<AuditEntry>("auditoria", "wamovale", { filter: d => d.acao === "restaurar" });
+    expect(items[0].data).toMatchObject({ usuario: "Linha de comando", registroId: adm.id });
+    expect(() => run(dir, ["adm-0001"], {}, "tools/restaurar-usuario.ts")).toThrow();
+  }, 60000);
 });

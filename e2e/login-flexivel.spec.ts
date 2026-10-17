@@ -59,10 +59,12 @@ test.describe("Meu perfil: nome de usuário e senha; matrícula só leitura", ()
     await senha.getByLabel(/Nova senha/).fill(nova);
     await senha.getByLabel("Confirmar nova senha").fill(nova);
     await senha.getByRole("button", { name: "Salvar nova senha" }).click();
-    await expect(page.getByText("Senha atual incorreta.")).toBeVisible();
+    await expect(senha.getByRole("alert")).toHaveText("Senha atual incorreta.");
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
     await senha.getByLabel("Senha atual").fill(E2E_DEMO_SENHA!);
     await senha.getByRole("button", { name: "Salvar nova senha" }).click();
-    await expect(page.getByText("Senha alterada")).toBeVisible();
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Senha alterada" })).toBeVisible();
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Não foi possível" })).toHaveCount(0);
 
     await page.context().clearCookies();
     await entrar(page, "Consulta.E2E", nova);

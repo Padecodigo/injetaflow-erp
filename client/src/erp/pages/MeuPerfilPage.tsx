@@ -71,10 +71,10 @@ function ContaForm() {
       const out = await salvar.mutateAsync({ username: username.trim().toLowerCase() });
       utils.auth.me.setData(undefined, out);
       utils.perfil.invalidate();
-      toast.success("Nome de usuário atualizado", { description: `Agora você também pode entrar com "${out.username}".` });
+      toast.success("Nome de usuário atualizado", { id: "meu-perfil-conta", description: `Agora você também pode entrar com "${out.username}".` });
     } catch (error) {
       setErro(errorMessage(error));
-      toast.error("Não foi possível salvar", { description: errorMessage(error) });
+      toast.error("Não foi possível salvar", { id: "meu-perfil-conta", description: errorMessage(error) });
     }
   };
   return (
@@ -91,36 +91,56 @@ function ContaForm() {
   );
 }
 
+const SENHA_TOAST = "meu-perfil-senha";
+
+/** Troca da própria senha: validação própria em português (sem balões nativos do navegador) e um único aviso por vez. */
 function SenhaForm() {
   const change = trpc.auth.changePassword.useMutation();
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [confirma, setConfirma] = useState("");
+  const [erros, setErros] = useState<{ atual?: string; nova?: string; confirma?: string }>({});
+  const validar = () => {
+    const out: typeof erros = {};
+    if (!atual) out.atual = "Informe a senha atual.";
+    if (!nova) out.nova = "Informe a nova senha.";
+    else if (nova.length < PASSWORD_MIN_LENGTH) out.nova = `Nova senha: ${PASSWORD_MIN_MESSAGE}.`;
+    else if (nova === atual) out.nova = "A nova senha deve ser diferente da atual.";
+    if (!confirma) out.confirma = "Confirme a nova senha.";
+    else if (nova && confirma !== nova) out.confirma = "As senhas não conferem.";
+    return out;
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (nova.length < PASSWORD_MIN_LENGTH) {
-      toast.error("Senha muito curta", { description: `Nova senha: ${PASSWORD_MIN_MESSAGE}.` });
-      return;
-    }
-    if (nova !== confirma) {
-      toast.error("As senhas não conferem");
+    const found = validar();
+    setErros(found);
+    if (Object.keys(found).length) {
+      toast.error("Confira os campos da senha", { id: SENHA_TOAST, description: Object.values(found)[0] });
       return;
     }
     try {
       await change.mutateAsync({ atual, nova });
-      setAtual(""); setNova(""); setConfirma("");
-      toast.success("Senha alterada", { description: "Outras sessões abertas foram encerradas." });
+      setAtual(""); setNova(""); setConfirma(""); setErros({});
+      toast.success("Senha alterada", { id: SENHA_TOAST, description: "Outras sessões abertas foram encerradas." });
     } catch (error) {
-      toast.error("Não foi possível alterar a senha", { description: errorMessage(error) });
+      const message = errorMessage(error);
+      setErros(/senha atual/i.test(message) ? { atual: message } : { nova: message });
+      toast.error("Não foi possível alterar a senha", { id: SENHA_TOAST, description: message });
     }
   };
+  const field = (key: keyof typeof erros) => ({
+    "aria-invalid": erros[key] ? true : undefined,
+    "aria-describedby": erros[key] ? `senha-erro-${key}` : undefined,
+  });
+  const erro = (key: keyof typeof erros) => erros[key] ? <small id={`senha-erro-${key}`} className="erp-field-error" role="alert">{erros[key]}</small> : null;
+  const limpar = (key: keyof typeof erros) => setErros(current => ({ ...current, [key]: undefined }));
   return (
     <section className="panel profile-docs-panel" aria-label="Alterar senha">
       <div className="panel-heading"><div><span className="panel-kicker">Segurança</span><h2>Alterar senha</h2></div><KeyRound size={18} color="var(--teal-dark)" /></div>
-      <form onSubmit={submit}>
-        <label className="modal-field"><span>Senha atual</span><input type="password" autoComplete="current-password" required value={atual} onChange={e => setAtual(e.target.value)} /></label>
-        <label className="modal-field"><span>Nova senha (mín. {PASSWORD_MIN_LENGTH})</span><input type="password" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH} value={nova} onChange={e => setNova(e.target.value)} /></label>
-        <label className="modal-field"><span>Confirmar nova senha</span><input type="password" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH} value={confirma} onChange={e => setConfirma(e.target.value)} /></label>
+      <form onSubmit={submit} noValidate aria-label="Alterar senha">
+        <label className="modal-field"><span>Senha atual</span><input name="atual" type="password" autoComplete="current-password" {...field("atual")} value={atual} onChange={e => { setAtual(e.target.value); limpar("atual"); }} />{erro("atual")}</label>
+        <label className="modal-field"><span>Nova senha (mín. {PASSWORD_MIN_LENGTH})</span><input name="nova" type="password" autoComplete="new-password" {...field("nova")} value={nova} onChange={e => { setNova(e.target.value); limpar("nova"); }} />{erro("nova")}</label>
+        <label className="modal-field"><span>Confirmar nova senha</span><input name="confirma" type="password" autoComplete="new-password" {...field("confirma")} value={confirma} onChange={e => { setConfirma(e.target.value); limpar("confirma"); }} />{erro("confirma")}</label>
         <div className="erp-modal-actions"><button className="button button--primary" disabled={change.isPending}>{change.isPending && <Loader2 size={15} className="erp-spin" />}Salvar nova senha</button></div>
       </form>
     </section>
