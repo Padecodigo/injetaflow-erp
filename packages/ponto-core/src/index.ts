@@ -4,13 +4,13 @@
  * relatório de inconsistências, chaves de idempotência e decisão do pipeline de importação.
  */
 export * from "./tipos";
-export { parseAfd } from "./parser";
+export { parseAfd, normalizarEmpregador } from "./parser";
 export { crc16Kermit, crc16KermitHex } from "./crc16";
 export { calcularHashTipo7 } from "./cadeia-hash";
 export { sha256Hex } from "./hash";
 export { decodificarLatin1, codificarLatin1 } from "./latin1";
 export { campo, lerData, lerDataHora, lerCpf12, lerCpfResponsavel, cpfValido, cnpjValido } from "./campos";
 export { chaveNatural, chaveIdempotencia, identificadorRep, type ComponentesChave } from "./idempotencia";
-export { decidirImportacao, type EstadoConhecido, type LinhaParaDecisao, type DecisaoImportacao, type Conflito, type Lacuna, type Retrocesso } from "./pipeline";
+export { decidirImportacao, planejarImportacao, type EstadoConhecido, type LinhaParaDecisao, type DecisaoImportacao, type Conflito, type Quarentena, type Lacuna, type Retrocesso, type OpcoesDecisao } from "./pipeline";
 export { relatorioImportacao, inconsistenciasDaImportacao, inconsistenciasCsv, type RelatorioImportacao, type StatusImportacao } from "./relatorio";
 export * from "./leiaute671";

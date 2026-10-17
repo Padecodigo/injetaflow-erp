@@ -13,6 +13,8 @@ export interface RelatorioImportacao {
   novas: number | null;
   duplicadas: number | null;
   conflitos: number | null;
+  /** P8-01: registros retidos para o RH (nunca viram marcação válida). */
+  quarentena: number | null;
   nsrsEmLacuna: number | null;
   retidasPorBloqueio: number | null;
   crcInvalido: number;
@@ -27,8 +29,9 @@ export interface RelatorioImportacao {
 /**
  * Relatório de inconsistências por importação (plano v2, §3.3): lidas, novas, duplicadas, conflitos, inválidas,
  * lacunas, CRC, cadeia de hash, trailer. Sem a decisão do pipeline, os campos dependentes do estado ficam `null`.
- * Status: REJEITADA (leiaute não suportado, arquivo vazio, sem cabeçalho), BLOQUEADA (retrocesso de NSR),
- * SEM_NOVIDADES (nada novo nem conflito), COM_ERROS, COM_AVISOS ou OK.
+ * Status: REJEITADA (`parse.motivosRejeicao`: vazio, encoding, leiaute, sem cabeçalho, empregador fora da empresa),
+ * BLOQUEADA (retrocesso de NSR), SEM_NOVIDADES (nada novo, sem conflito nem quarentena), COM_ERROS (erro, conflito
+ * ou quarentena), COM_AVISOS ou OK.
  */
 export function relatorioImportacao<T extends LinhaParaDecisao>(parse: ResultadoParser, decisao?: DecisaoImportacao<T>): RelatorioImportacao {
   const porCodigo: Partial<Record<CodigoInconsistencia, number>> = {};
@@ -36,13 +39,14 @@ export function relatorioImportacao<T extends LinhaParaDecisao>(parse: Resultado
   const conta = (c: CodigoInconsistencia) => porCodigo[c] ?? 0;
   const erros = parse.inconsistencias.filter(i => i.severidade === "erro").length;
   const avisos = parse.inconsistencias.length - erros;
-  const rejeitada = parse.leiaute !== "671-004" || !parse.cabecalho;
+  const rejeitada = parse.motivosRejeicao.length > 0 || parse.leiaute !== "671-004" || !parse.cabecalho;
+  const quarentena = decisao ? decisao.quarentena.length : null;
   const nsrsEmLacuna = decisao ? decisao.lacunas.reduce((soma, l) => soma + (l.ate - l.de + 1), 0) : null;
   let status: StatusImportacao;
   if (rejeitada) status = "REJEITADA";
   else if (decisao?.bloqueada) status = "BLOQUEADA";
-  else if (decisao && decisao.inserir.length === 0 && decisao.conflitos.length === 0 && erros === 0) status = "SEM_NOVIDADES";
-  else if (erros > 0 || (decisao?.conflitos.length ?? 0) > 0) status = "COM_ERROS";
+  else if (decisao && decisao.inserir.length === 0 && decisao.conflitos.length === 0 && decisao.quarentena.length === 0 && erros === 0) status = "SEM_NOVIDADES";
+  else if (erros > 0 || (decisao?.conflitos.length ?? 0) > 0 || (quarentena ?? 0) > 0) status = "COM_ERROS";
   else if (avisos > 0 || (nsrsEmLacuna ?? 0) > 0) status = "COM_AVISOS";
   else status = "OK";
   return {
@@ -55,6 +59,7 @@ export function relatorioImportacao<T extends LinhaParaDecisao>(parse: Resultado
     novas: decisao ? decisao.inserir.length : null,
     duplicadas: decisao ? decisao.duplicadas.length : null,
     conflitos: decisao ? decisao.conflitos.length : null,
+    quarentena,
     nsrsEmLacuna,
     retidasPorBloqueio: decisao ? decisao.retidasPorBloqueio.length : null,
     crcInvalido: conta("CRC_INVALIDO"),
@@ -79,6 +84,14 @@ export function inconsistenciasDaImportacao<T extends LinhaParaDecisao & { numer
     }
     for (const l of decisao.lacunas) {
       lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: l.de, mensagem: l.de === l.ate ? `NSR ${l.de} ausente; colete de novo a partir dele.` : `NSRs ${l.de} a ${l.ate} ausentes; colete de novo a partir do ${l.de}.` });
+    }
+    for (const q of decisao.quarentena) {
+      if (q.motivos.includes("NSR_ABAIXO_DO_CURSOR")) {
+        lista.push({ codigo: "NSR_ABAIXO_DO_CURSOR", severidade: "erro", nsr: q.registro.nsr, numeroLinha: q.registro.numeroLinha, mensagem: `NSR ${q.registro.nsr} está abaixo do último NSR importado deste REP e não existe na base: possível reset ou troca do relógio. Registro retido para o RH confirmar.` });
+      }
+    }
+    if (decisao.quarentena.length > 0) {
+      lista.push({ codigo: "NSR_QUARENTENA", severidade: "erro", mensagem: `${decisao.quarentena.length} registro(s) em quarentena (erro grave, NSR repetido com conteúdo diferente ou abaixo do cursor). Não viraram marcação; ficam pendentes para o RH.` });
     }
     if (decisao.retrocesso) {
       const r = decisao.retrocesso;

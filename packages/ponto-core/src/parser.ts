@@ -77,13 +77,29 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     assinatura: null,
     contagemPorTipo: contagemZerada(),
     inconsistencias,
+    motivosRejeicao: [],
   };
+  const rejeitar = (codigo: CodigoInconsistencia) => {
+    if (!resultado.motivosRejeicao.includes(codigo)) resultado.motivosRejeicao.push(codigo);
+  };
+
+  // P8-09: problemas de encoding e de quebra de linha têm mensagem própria, antes do detector de leiaute,
+  // para o RH não procurar o defeito no lugar errado ("leiaute legado").
+  const encoding = diagnosticarEncoding(bytes);
+  if (encoding) {
+    resultado.leiaute = "nao-suportado";
+    add(encoding.codigo, "erro", encoding.mensagem, { numeroLinha: encoding.numeroLinha });
+    rejeitar(encoding.codigo);
+    resultado.totalLinhas = contarLinhas(bytes);
+    return resultado;
+  }
 
   const linhas = quebrarLinhas(decodificarLatin1(bytes), inconsistencias);
   resultado.totalLinhas = linhas.length;
   if (linhas.length === 0) {
     resultado.leiaute = "vazio";
     add("ARQUIVO_VAZIO", "erro", "O arquivo está vazio.");
+    rejeitar("ARQUIVO_VAZIO");
     return resultado;
   }
 
@@ -95,6 +111,7 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     if (primeira.texto.length !== TAMANHO_CABECALHO || versao !== VERSAO_LEIAUTE_671) {
       resultado.leiaute = "nao-suportado";
       add("LEIAUTE_NAO_SUPORTADO", "erro", `Cabeçalho com ${primeira.texto.length} posições e versão "${versao.trim()}". Só o leiaute 671 versão 004 (302 posições) é suportado; leiaute legado (Portaria 1510) ainda não.`, { numeroLinha: primeira.numeroLinha });
+      rejeitar("LEIAUTE_NAO_SUPORTADO");
       return resultado;
     }
   }
@@ -110,6 +127,10 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
   let nsrAnterior: number | null = null;
   const nsrsVistos = new Set<number>();
   let hashAnterior: string | null = opcoes.hashAnteriorInicial ?? null;
+  // P8-05: sem hash anterior informado, o 1º elo só é verificável se o arquivo começa no NSR 1
+  let primeiroNsrDoArquivo: number | null = null;
+  let tipo7Vistos = 0;
+  const permitidos = opcoes.empregadoresPermitidos ? new Set(opcoes.empregadoresPermitidos.map(v => normalizarEmpregador(v)).filter(Boolean)) : null;
   let depoisDoTrailer = 0;
 
   const invalida = (l: LinhaLida, linhaHash: string, motivo: CodigoInconsistencia, tipo: string | null, nsr: number | null) => {
@@ -117,13 +138,14 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     resultado.invalidas.push(item);
   };
 
-  const conferirCrc = (texto: string, numeroLinha: number, nsr: number | undefined, problemas?: CodigoInconsistencia[]) => {
+  const conferirCrc = (texto: string, numeroLinha: number, nsr: number | undefined, problemas?: CodigoInconsistencia[], errosDoCrc?: CodigoInconsistencia[]) => {
     if (sevCrc === "ignorar") return;
     const gravado = texto.slice(-4).toUpperCase();
     const calculado = crc16KermitHex(texto.slice(0, -4));
     if (gravado !== calculado) {
       add("CRC_INVALIDO", sevCrc, `CRC-16 não confere (gravado ${gravado}, calculado ${calculado}).`, { numeroLinha, nsr, campo: "crc" });
       problemas?.push("CRC_INVALIDO");
+      if (sevCrc === "erro") errosDoCrc?.push("CRC_INVALIDO");
     }
   };
 
@@ -171,8 +193,12 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
         posicaoRegistro++;
         continue;
       }
-      resultado.cabecalho = lerCabecalho(t, l.numeroLinha, linhaHash, add);
+      resultado.cabecalho = lerCabecalho(t, l.numeroLinha, linhaHash, add, tipoRep);
       conferirCrc(t, l.numeroLinha, undefined);
+      if (permitidos && !permitidos.has(normalizarEmpregador(resultado.cabecalho.idEmpregador, resultado.cabecalho.tpIdEmpregador))) {
+        add("EMPREGADOR_FORA_DA_EMPRESA", "erro", "O CNPJ/CPF do empregador no cabeçalho não é de nenhum estabelecimento desta empresa. Arquivo rejeitado: confira se o AFD é do relógio certo.", { numeroLinha: l.numeroLinha, campo: "idEmpregador" });
+        rejeitar("EMPREGADOR_FORA_DA_EMPRESA");
+      }
       posicaoRegistro++;
       continue;
     }
@@ -206,11 +232,16 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     }
 
     const problemas: CodigoInconsistencia[] = [];
+    const errosGraves: CodigoInconsistencia[] = [];
     const ctx = { numeroLinha: l.numeroLinha, nsr };
     const prob = (codigo: CodigoInconsistencia, severidade: Severidade, mensagem: string, campoNome?: string) => {
       add(codigo, severidade, mensagem, { ...ctx, campo: campoNome });
       if (!problemas.includes(codigo)) problemas.push(codigo);
+      if (severidade === "erro" && !errosGraves.includes(codigo)) errosGraves.push(codigo);
     };
+    if (primeiroNsrDoArquivo === null) primeiroNsrDoArquivo = nsr;
+    // P8-08: o NSR começa em 1 (FAQ 41; Anexo IX)
+    if (nsr === 0) prob("CAMPO_INVALIDO", "erro", "NSR 000000000 em registro: a numeração começa em 1.", "nsr");
     if (nsrsVistos.has(nsr)) {
       prob("NSR_DUPLICADO_NO_ARQUIVO", "erro", `NSR ${nsr} repetido no arquivo.`);
     } else if (nsrAnterior !== null && nsr < nsrAnterior) {
@@ -246,7 +277,7 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
       if (!cpfValido(v)) prob("CPF_INVALIDO", "aviso", `CPF do campo "${nome}" com dígito verificador inválido.`, nome);
       return v;
     };
-    const base = { numeroLinha: l.numeroLinha, linhaBruta: t, linhaHash, nsr, problemas };
+    const base = { numeroLinha: l.numeroLinha, linhaBruta: t, linhaHash, nsr, problemas, errosGraves };
 
     let registro: Registro;
     switch (tipoNsr) {
@@ -259,6 +290,9 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
           local: campo(t, 228, 327).trimEnd(), crc: campo(t, 328, 331),
         };
         if (!idEmpregadorValido(tpId, id)) prob("CNPJ_CPF_INVALIDO", "aviso", "CNPJ/CPF do empregador inválido no registro tipo 2.", "idEmpregador");
+        if (permitidos && !permitidos.has(normalizarEmpregador(id, tpId))) {
+          prob("EMPREGADOR_FORA_DA_EMPRESA", "erro", "Registro tipo 2 (inclusão ou alteração do empregador no REP) com CNPJ/CPF que não é desta empresa.", "idEmpregador");
+        }
         if (numericoOpcional(campo(t, 64, 77)) === null) prob("CAMPO_INVALIDO", "erro", 'CNO/CAEPF não numérico.', "cnoCaepf");
         break;
       }
@@ -280,6 +314,9 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
       case "6": {
         const codigoEvento = campo(t, 35, 36);
         if (!EVENTOS_SENSIVEIS[codigoEvento]) prob("CAMPO_INVALIDO", "erro", `Código de evento sensível "${codigoEvento}" desconhecido.`, "codigoEvento");
+        else if ((tipoRep === "C" || tipoRep === "P") && !EVENTOS_POR_TIPO_REP[tipoRep].has(codigoEvento)) {
+          prob("CAMPO_INVALIDO", "erro", `Evento sensível "${codigoEvento}" não existe para REP-${tipoRep} (leiaute, tipo 6, campo 4).`, "codigoEvento");
+        }
         registro = { ...base, tipo: "6", gravadoEm: dh(11, 34, "gravadoEm"), codigoEvento };
         break;
       }
@@ -293,9 +330,15 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
           ...base, tipo: "7", marcadoEm: dh(11, 34, "marcadoEm"), cpf: cpf12(35, 46, "cpf"), gravadoEm: dh(47, 70, "gravadoEm"),
           coletor, offline: onOff === "1" ? true : onOff === "0" ? false : null, hash,
         };
+        tipo7Vistos++;
         if (sevHash !== "ignorar") {
-          const esperado = calcularHashTipo7(t.slice(0, 73), hashAnterior);
-          if (!/^[0-9a-fA-F]{64}$/.test(hash) || hash.toLowerCase() !== esperado) {
+          const primeiroElo = tipo7Vistos === 1 && opcoes.hashAnteriorInicial === undefined;
+          if (!/^[0-9a-fA-F]{64}$/.test(hash)) {
+            prob("HASH_CADEIA_INVALIDA", sevHash, "Hash do registro tipo 7 não tem 64 caracteres hexadecimais.", "hash");
+          } else if (primeiroElo && primeiroNsrDoArquivo !== 1) {
+            // P8-05: arquivo parcial sem o hash do tipo 7 anterior; o elo não pode ser verificado (não é inválido)
+            prob("CADEIA_NAO_VERIFICAVEL", "aviso", "Primeiro registro tipo 7 de um arquivo parcial: sem o hash do registro anterior (hashAnteriorInicial), a cadeia não pode ser verificada neste elo.", "hash");
+          } else if (hash.toLowerCase() !== calcularHashTipo7(t.slice(0, 73), hashAnterior)) {
             prob("HASH_CADEIA_INVALIDA", sevHash, "Hash SHA-256 do registro tipo 7 não confere com a cadeia (concatenação oficial a confirmar).", "hash");
           }
         }
@@ -303,12 +346,13 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
         break;
       }
     }
-    if (TIPOS_COM_CRC.has(tipoNsr)) conferirCrc(t, l.numeroLinha, nsr, problemas);
+    if (TIPOS_COM_CRC.has(tipoNsr)) conferirCrc(t, l.numeroLinha, nsr, problemas, errosGraves);
     resultado.registros.push(registro);
   }
 
   // Estrutura do arquivo
   if (!resultado.cabecalho && !resultado.invalidas.some(i => i.tipo === "1")) add("CABECALHO_AUSENTE", "erro", "Arquivo sem cabeçalho (registro tipo 1).");
+  if (!resultado.cabecalho) rejeitar("CABECALHO_AUSENTE");
   if (!resultado.trailer) {
     add("TRAILER_AUSENTE", "erro", "Arquivo sem trailer (registro 999999999).");
   } else {
@@ -346,8 +390,13 @@ function idEmpregadorValido(tpId: string, id: string): boolean {
 
 type Add = (codigo: CodigoInconsistencia, severidade: Severidade, mensagem: string, extra?: Partial<Inconsistencia>) => void;
 
-function lerCabecalho(t: string, numeroLinha: number, linhaHash: string, add: Add): Cabecalho {
+function lerCabecalho(t: string, numeroLinha: number, linhaHash: string, add: Add, tipoRep: TipoRep | null): Cabecalho {
   const ctx = { numeroLinha };
+  // P8-08: campo 7 (190–206), tipo N, preenchido a partir da esquerda (item 7: sobra com espaços)
+  const campo7 = campo(t, 190, 206);
+  if (!/^\d+ *$/.test(campo7)) {
+    add("CAMPO_INVALIDO", "erro", `Campo 7 do cabeçalho (posições 190–206: ${tipoRep === "A" ? "nº do processo do acordo/convenção" : tipoRep === "P" ? "nº de registro no INPI" : "nº de fabricação"}) deve ser numérico, alinhado à esquerda.`, { ...ctx, campo: "numeroRep" });
+  }
   const tpIdEmpregador = campo(t, 11, 11);
   const idEmpregador = campo(t, 12, 25).trimEnd();
   const dataInicial = lerData(campo(t, 207, 216));
@@ -380,4 +429,58 @@ function lerTrailer(t: string, numeroLinha: number, linhaHash: string, add: Add)
     numeroLinha, linhaBruta: t, linhaHash,
     quantidades: { "2": q(10, 18, "2"), "3": q(19, 27, "3"), "4": q(28, 36, "4"), "5": q(37, 45, "5"), "6": q(46, 54, "6"), "7": q(55, 63, "7") },
   };
+}
+
+/** Códigos de evento sensível permitidos por tipo de REP (leiaute, tipo 6, campo 4). */
+const EVENTOS_POR_TIPO_REP: Record<"C" | "P", Set<string>> = {
+  C: new Set(["01", "02", "03", "04", "05", "06"]),
+  P: new Set(["02", "07", "08"]),
+};
+
+/** CNPJ/CPF do empregador sem pontuação e em maiúsculas; CPF em 14 posições ("000" + 11 ou 11 + espaços) vira 11. */
+export function normalizarEmpregador(id: string, tpId?: string): string {
+  const limpo = id.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  if (tpId === "2" && limpo.length === 14 && limpo.startsWith("000")) return limpo.slice(3);
+  return limpo;
+}
+
+function contarLinhas(bytes: Uint8Array): number {
+  let n = 0;
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0x0a) n++;
+  return bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a ? n + 1 : n;
+}
+
+/**
+ * P8-09: BOM UTF-8, CR solto (só CR, ou CR CR LF) e arquivo re-salvo em UTF-8. Devolve o primeiro problema
+ * encontrado, com mensagem para o RH. O AFD é ISO 8859-1 com CR LF (leiaute, itens 2 e 3).
+ */
+function diagnosticarEncoding(bytes: Uint8Array): { codigo: CodigoInconsistencia; mensagem: string; numeroLinha?: number } | null {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return { codigo: "BOM_UTF8", numeroLinha: 1, mensagem: "O arquivo começa com BOM UTF-8: ele foi aberto e salvo num editor de texto. O AFD deve estar em ISO 8859-1, sem BOM; exporte de novo direto do relógio." };
+  }
+  let linha = 1;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x0d && bytes[i + 1] !== 0x0a) {
+      return { codigo: "QUEBRA_CR_SOLTO", numeroLinha: linha, mensagem: "Quebra de linha só com CR (ou CR repetido antes do LF): o arquivo foi convertido por outro programa. O AFD termina cada linha com CR LF; exporte de novo direto do relógio." };
+    }
+    if (bytes[i] === 0x0a) linha++;
+  }
+  // UTF-8: todo byte >= 0x80 faz parte de uma sequência UTF-8 válida e há pelo menos uma sequência
+  let sequencias = 0;
+  for (let i = 0; i < bytes.length; ) {
+    const b = bytes[i];
+    if (b < 0x80) { i++; continue; }
+    const n = b >= 0xc2 && b <= 0xdf ? 1 : b >= 0xe0 && b <= 0xef ? 2 : b >= 0xf0 && b <= 0xf4 ? 3 : -1;
+    if (n < 0) return null;
+    for (let k = 1; k <= n; k++) {
+      const c = bytes[i + k];
+      if (c === undefined || c < 0x80 || c > 0xbf) return null;
+    }
+    sequencias++;
+    i += n + 1;
+  }
+  if (sequencias > 0) {
+    return { codigo: "ENCODING_UTF8", mensagem: `O arquivo parece ter sido salvo em UTF-8 (${sequencias} caractere(s) acentuado(s) com mais de 1 byte), o que muda o tamanho das linhas. O AFD deve estar em ISO 8859-1; exporte de novo direto do relógio, sem abrir em editor.` };
+  }
+  return null;
 }

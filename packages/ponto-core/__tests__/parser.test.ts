@@ -167,10 +167,14 @@ describe("parseAfd: cada defeito gera a inconsistência esperada", () => {
     expect(parse(trocar(p, 1, adulterada), { cadeiaHash: "ignorar" }).inconsistencias).toEqual([]);
   });
 
-  it("arquivo parcial de REP-P usa o hash anterior informado", () => {
+  it("arquivo parcial de REP-P usa o hash anterior informado; sem ele o 1º elo é não verificável, não inválido (P8-05)", () => {
     const a = tipo7(10, { dh: "2026-10-02T08:00:00-0300", cpf: CPF_A, hashAnterior: "ab".repeat(32) });
     const linhas = [cabecalho({ numeroRep: "5120220000001", modelo: "" }), a.linha, trailer({ "7": 1 }), assinaturaP7s()];
-    expect(codigos(parse(linhas))).toEqual(["HASH_CADEIA_INVALIDA"]);
+    // antes (aceite P8-05): HASH_CADEIA_INVALIDA falso
+    expect(parse(linhas).inconsistencias).toMatchObject([{ codigo: "CADEIA_NAO_VERIFICAVEL", severidade: "aviso", nsr: 10 }]);
+    expect(parse(linhas, { cadeiaHash: "erro" }).registros[0].errosGraves).toEqual([]);
+    // hash anterior errado informado: aí sim é inválido
+    expect(codigos(parse(linhas, { hashAnteriorInicial: "cd".repeat(32) }))).toEqual(["HASH_CADEIA_INVALIDA"]);
     expect(parse(linhas, { hashAnteriorInicial: "AB".repeat(32) }).inconsistencias).toEqual([]);
   });
 

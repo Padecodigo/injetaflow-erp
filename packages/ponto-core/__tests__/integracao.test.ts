@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  chaveIdempotencia, chaveNatural, decidirImportacao, identificadorRep, inconsistenciasCsv, inconsistenciasDaImportacao, parseAfd, relatorioImportacao,
-  type EstadoConhecido, type Registro,
+  chaveIdempotencia, chaveNatural, identificadorRep, inconsistenciasCsv, inconsistenciasDaImportacao, parseAfd, planejarImportacao, relatorioImportacao,
+  type EstadoConhecido, type OpcoesParser, type Quarentena, type Registro,
 } from "../src";
-import { CPF_A, linhasRepC, linhasRepP, montarAfd, tipo3, trailer } from "./fixtures/gerador";
+import { CNPJ_EMPREGADOR, CPF_A, linhasRepC, linhasRepP, montarAfd, tipo3, trailer } from "./fixtures/gerador";
 
 /**
  * Integração do ponto-core sem banco: arquivo sintético em disco → parser → chave do REP → decisão do pipeline →
@@ -16,13 +16,22 @@ const fixture = (nome: string) => readFileSync(join(import.meta.dirname, "fixtur
 
 class RepositorioEmMemoria {
   private readonly linhas = new Map<string, { hash: string; bruta: string }>();
+  /** Pendências para o RH (quarentena): guardadas, nunca como marcação válida. */
+  readonly pendencias: Quarentena<Registro>[] = [];
+  /** Contrato da F2 (README): hashes de toda a faixa, último e primeiro NSR gravados. */
   estado(empresaId: string, repId: string): EstadoConhecido {
     const hashesPorNsr = new Map<number, string>();
+    let ultimoNsr: number | null = null;
+    let primeiroNsr: number | null = null;
     for (const [chave, v] of this.linhas) {
-      const [e, r, nsr] = chave.split("|");
-      if (e === encodeURIComponent(empresaId) && r === encodeURIComponent(repId)) hashesPorNsr.set(Number(nsr), v.hash);
+      const [e, r, nsrTexto] = chave.split("|");
+      if (e !== encodeURIComponent(empresaId) || r !== encodeURIComponent(repId)) continue;
+      const nsr = Number(nsrTexto);
+      hashesPorNsr.set(nsr, v.hash);
+      if (ultimoNsr === null || nsr > ultimoNsr) ultimoNsr = nsr;
+      if (primeiroNsr === null || nsr < primeiroNsr) primeiroNsr = nsr;
     }
-    return { ultimoNsr: hashesPorNsr.size ? Math.max(...hashesPorNsr.keys()) : null, hashesPorNsr };
+    return { ultimoNsr, primeiroNsr, hashesPorNsr };
   }
   gravar(empresaId: string, repId: string, registros: Registro[]) {
     for (const r of registros) {
@@ -39,11 +48,12 @@ class RepositorioEmMemoria {
   }
 }
 
-function importar(repo: RepositorioEmMemoria, empresaId: string, bytes: Uint8Array) {
-  const parse = parseAfd(bytes);
-  const repId = identificadorRep(parse.cabecalho!, parse.tipoRep ?? "C");
-  const decisao = decidirImportacao(repo.estado(empresaId, repId), parse.registros);
+function importar(repo: RepositorioEmMemoria, empresaId: string, bytes: Uint8Array, opcoes: OpcoesParser = { empregadoresPermitidos: [CNPJ_EMPREGADOR] }) {
+  const parse = parseAfd(bytes, opcoes);
+  const repId = parse.cabecalho ? identificadorRep(parse.cabecalho, parse.tipoRep ?? "C") : "sem-cabecalho";
+  const decisao = planejarImportacao(repo.estado(empresaId, repId), parse);
   repo.gravar(empresaId, repId, decisao.inserir);
+  repo.pendencias.push(...decisao.quarentena);
   return { parse, repId, decisao, relatorio: relatorioImportacao(parse, decisao) };
 }
 
@@ -103,5 +113,23 @@ describe("integração ponto-core: arquivo → parser → pipeline → repositó
     expect(r.parse.tipoRep).toBe("P");
     expect(r.repId.startsWith("P:")).toBe(true);
     expect(r.relatorio).toMatchObject({ status: "OK", novas: 4, cadeiaHashInvalida: 0, nsrsEmLacuna: 0 });
+  });
+
+  it("P8-01/P8-04: marcação com erro grave vai para pendência (nunca vira marcação) e arquivo de outra empresa é rejeitado inteiro", () => {
+    const repo = new RepositorioEmMemoria();
+    const base = linhasRepC();
+    // NSR 6 com data e hora impossível (CRC recalculado): erro grave
+    const comErro = base.map((l, i) => (i === 6 ? tipo3(6, "2026-02-30T25:61:00-0300", CPF_A) : l));
+    const r = importar(repo, "empresa-a", montarAfd(comErro));
+    expect(r.decisao.inserir.map(x => x.nsr)).not.toContain(6);
+    expect(repo.bruta("empresa-a", r.repId, 6)).toBeUndefined();
+    expect(repo.pendencias.map(p => [p.registro.nsr, p.motivos])).toEqual([[6, ["CAMPO_INVALIDO"]]]);
+    expect(r.relatorio).toMatchObject({ status: "COM_ERROS", novas: 9, quarentena: 1 });
+
+    const outra = importar(new RepositorioEmMemoria(), "empresa-a", montarAfd(base), { empregadoresPermitidos: ["99.888.777/0001-00"] });
+    expect(outra.relatorio.status).toBe("REJEITADA");
+    expect(outra.decisao.inserir).toEqual([]);
+    expect(outra.decisao.quarentena).toHaveLength(10);
+    expect(outra.decisao.quarentena[0].motivos).toEqual(["EMPREGADOR_FORA_DA_EMPRESA"]);
   });
 });

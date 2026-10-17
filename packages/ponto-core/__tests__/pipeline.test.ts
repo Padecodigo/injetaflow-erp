@@ -10,7 +10,7 @@ const estado = (nsrs: number[], extra: Record<number, string> = {}): EstadoConhe
 describe("decidirImportacao (função pura do pipeline)", () => {
   it("primeira importação insere tudo, sem lacuna", () => {
     const d = decidirImportacao(estado([]), [l(1), l(2), l(3)]);
-    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
+    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], quarentena: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
   });
 
   it("reimportação do mesmo conteúdo gera só duplicadas", () => {
@@ -44,8 +44,8 @@ describe("decidirImportacao (função pura do pipeline)", () => {
     expect(d.inserir.map(x => x.nsr)).toEqual([6, 7, 9, 10]);
   });
 
-  it("NSR que preenche lacuna antiga é inserido e não conta como lacuna", () => {
-    const d = decidirImportacao({ ultimoNsr: 5, hashesPorNsr: new Map([[1, "h1"], [2, "h2"], [5, "h5"]]) }, [l(3), l(4)]);
+  it("NSR que preenche lacuna antiga (entre primeiroNsr e ultimoNsr) é inserido e não conta como lacuna", () => {
+    const d = decidirImportacao({ ultimoNsr: 5, primeiroNsr: 1, hashesPorNsr: new Map([[1, "h1"], [2, "h2"], [5, "h5"]]) }, [l(3), l(4)]);
     expect(d.inserir.map(x => x.nsr)).toEqual([3, 4]);
     expect(d.lacunas).toEqual([]);
     expect(d.retrocesso).toBeUndefined();
@@ -66,11 +66,15 @@ describe("decidirImportacao (função pura do pipeline)", () => {
     expect(d.inserir.map(x => x.nsr)).toEqual([6]);
   });
 
-  it("NSR repetido no próprio arquivo: igual = duplicada; diferente = conflito com a primeira ocorrência", () => {
+  it("NSR repetido no próprio arquivo: igual = duplicada; diferente = as duas ocorrências em quarentena (P8-07)", () => {
     const d = decidirImportacao(estado([]), [l(1), l(2), l(2), l(3), l(3, "y")]);
-    expect(d.inserir.map(x => x.nsr)).toEqual([1, 2, 3]);
+    expect(d.inserir.map(x => x.nsr)).toEqual([1, 2]);
     expect(d.duplicadas.map(x => x.nsr)).toEqual([2]);
-    expect(d.conflitos).toEqual([{ registro: l(3, "y"), hashExistente: "h3" }]);
+    expect(d.conflitos).toEqual([]);
+    expect(d.quarentena).toEqual([
+      { registro: l(3), motivos: ["NSR_DUPLICADO_NO_ARQUIVO"] },
+      { registro: l(3, "y"), motivos: ["NSR_DUPLICADO_NO_ARQUIVO"] },
+    ]);
   });
 
   it("é determinística e aceita Map ou objeto como estado; não altera a entrada", () => {
@@ -84,6 +88,6 @@ describe("decidirImportacao (função pura do pipeline)", () => {
   });
 
   it("arquivo vazio não decide nada", () => {
-    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
+    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], quarentena: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
   });
 });

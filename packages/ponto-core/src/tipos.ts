@@ -9,6 +9,10 @@ export type Severidade = "erro" | "aviso";
 
 export type CodigoInconsistencia =
   | "ARQUIVO_VAZIO"
+  // P8-09: encoding e quebras de linha (detectados antes do leiaute, com mensagem própria)
+  | "BOM_UTF8"
+  | "QUEBRA_CR_SOLTO"
+  | "ENCODING_UTF8"
   | "QUEBRA_LF"
   | "SEM_QUEBRA_FINAL"
   | "LINHA_EM_BRANCO"
@@ -24,6 +28,8 @@ export type CodigoInconsistencia =
   | "CNPJ_CPF_INVALIDO"
   | "CRC_INVALIDO"
   | "HASH_CADEIA_INVALIDA"
+  | "CADEIA_NAO_VERIFICAVEL"
+  | "EMPREGADOR_FORA_DA_EMPRESA"
   | "NSR_FORA_DE_ORDEM"
   | "NSR_DUPLICADO_NO_ARQUIVO"
   | "DATA_FORA_DO_PERIODO"
@@ -36,7 +42,9 @@ export type CodigoInconsistencia =
   // do pipeline de importação (dependem do estado já gravado)
   | "NSR_CONFLITO"
   | "NSR_LACUNA"
-  | "NSR_RETROCESSO";
+  | "NSR_RETROCESSO"
+  | "NSR_ABAIXO_DO_CURSOR"
+  | "NSR_QUARENTENA";
 
 export interface Inconsistencia {
   codigo: CodigoInconsistencia;
@@ -78,6 +86,8 @@ interface RegistroBase extends LinhaBase {
   nsr: number;
   /** Códigos das inconsistências que atingem este registro (o registro continua sendo lido). */
   problemas: CodigoInconsistencia[];
+  /** Subconjunto de `problemas` com severidade "erro": o pipeline põe o registro em quarentena (P8-01). */
+  errosGraves: CodigoInconsistencia[];
 }
 
 export interface RegistroEmpresa extends RegistroBase {
@@ -160,8 +170,17 @@ export interface OpcoesParser {
   crc?: Severidade | "ignorar";
   /** Severidade da cadeia de hash do tipo 7. Padrão "aviso": a concatenação exata está [a confirmar]. */
   cadeiaHash?: Severidade | "ignorar";
-  /** Hash do registro tipo 7 anterior ao primeiro do arquivo (arquivo parcial, coletado a partir de um NSR). */
+  /**
+   * Hash do registro tipo 7 anterior ao primeiro do arquivo (arquivo parcial, coletado a partir de um NSR).
+   * Sem ele, o primeiro elo só é verificado se o arquivo começa no NSR 1; senão vira `CADEIA_NAO_VERIFICAVEL` (P8-05).
+   */
   hashAnteriorInicial?: string;
+  /**
+   * CNPJs/CPFs dos estabelecimentos da empresa da sessão (P8-04). Quando informado, cabeçalho com outro empregador
+   * rejeita o arquivo (`EMPREGADOR_FORA_DA_EMPRESA`, erro) e registro tipo 2 com outro empregador vai para quarentena.
+   * Aceita com ou sem pontuação; CPF com 11 dígitos, CNPJ com 14 caracteres (numérico ou alfanumérico).
+   */
+  empregadoresPermitidos?: readonly string[];
 }
 
 export interface ResultadoParser {
@@ -177,4 +196,6 @@ export interface ResultadoParser {
   /** Linhas por tipo (2 a 7) efetivamente lidas, inclusive as com tamanho inválido. */
   contagemPorTipo: Record<TipoRegistroComNsr, number>;
   inconsistencias: Inconsistencia[];
+  /** Motivos que rejeitam o arquivo inteiro (vazio, encoding, leiaute, sem cabeçalho, empregador fora da empresa). */
+  motivosRejeicao: CodigoInconsistencia[];
 }
