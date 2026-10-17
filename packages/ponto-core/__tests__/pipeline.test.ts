@@ -10,7 +10,7 @@ const estado = (nsrs: number[], extra: Record<number, string> = {}): EstadoConhe
 describe("decidirImportacao (função pura do pipeline)", () => {
   it("primeira importação insere tudo, sem lacuna", () => {
     const d = decidirImportacao(estado([]), [l(1), l(2), l(3)]);
-    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], quarentena: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
+    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 3 });
   });
 
   it("reimportação do mesmo conteúdo gera só duplicadas", () => {
@@ -45,8 +45,12 @@ describe("decidirImportacao (função pura do pipeline)", () => {
   });
 
   it("NSR que preenche lacuna antiga (entre primeiroNsr e ultimoNsr) é inserido e não conta como lacuna", () => {
-    const d = decidirImportacao({ ultimoNsr: 5, primeiroNsr: 1, hashesPorNsr: new Map([[1, "h1"], [2, "h2"], [5, "h5"]]) }, [l(3), l(4)]);
+    const d = decidirImportacao(
+      { ultimoNsr: 5, primeiroNsr: 1, hashesPorNsr: new Map([[1, "h1"], [2, "h2"], [5, "h5"]]), instantesPorNsr: new Map([[2, 200], [5, 500]]), lacunasConhecidas: [{ de: 3, ate: 4 }] },
+      [{ ...l(3), instante: 300 }, { ...l(4), instante: 400 }],
+    );
     expect(d.inserir.map(x => x.nsr)).toEqual([3, 4]);
+    expect(d.lacunasPreenchidas.map(x => x.nsr)).toEqual([3, 4]);
     expect(d.lacunas).toEqual([]);
     expect(d.retrocesso).toBeUndefined();
   });
@@ -88,6 +92,6 @@ describe("decidirImportacao (função pura do pipeline)", () => {
   });
 
   it("arquivo vazio não decide nada", () => {
-    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], quarentena: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [] });
+    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 1 });
   });
 });

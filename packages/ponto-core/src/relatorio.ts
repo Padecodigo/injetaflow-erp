@@ -16,6 +16,8 @@ export interface RelatorioImportacao {
   /** P8-01: registros retidos para o RH (nunca viram marcação válida). */
   quarentena: number | null;
   nsrsEmLacuna: number | null;
+  /** P8-R2-01: NSRs inseridos que preencheram lacuna declarada (sempre com aviso; o status nunca fica OK). */
+  lacunasPreenchidas: number | null;
   retidasPorBloqueio: number | null;
   crcInvalido: number;
   cadeiaHashInvalida: number;
@@ -31,7 +33,7 @@ export interface RelatorioImportacao {
  * lacunas, CRC, cadeia de hash, trailer. Sem a decisão do pipeline, os campos dependentes do estado ficam `null`.
  * Status: REJEITADA (`parse.motivosRejeicao`: vazio, encoding, leiaute, sem cabeçalho, empregador fora da empresa),
  * BLOQUEADA (retrocesso de NSR), SEM_NOVIDADES (nada novo, sem conflito nem quarentena), COM_ERROS (erro, conflito
- * ou quarentena), COM_AVISOS ou OK.
+ * ou quarentena), COM_AVISOS (aviso, lacuna, preenchimento de lacuna, análise de lacuna truncada) ou OK.
  */
 export function relatorioImportacao<T extends LinhaParaDecisao>(parse: ResultadoParser, decisao?: DecisaoImportacao<T>): RelatorioImportacao {
   const porCodigo: Partial<Record<CodigoInconsistencia, number>> = {};
@@ -42,12 +44,13 @@ export function relatorioImportacao<T extends LinhaParaDecisao>(parse: Resultado
   const rejeitada = parse.motivosRejeicao.length > 0 || parse.leiaute !== "671-004" || !parse.cabecalho;
   const quarentena = decisao ? decisao.quarentena.length : null;
   const nsrsEmLacuna = decisao ? decisao.lacunas.reduce((soma, l) => soma + (l.ate - l.de + 1), 0) : null;
+  const lacunasPreenchidas = decisao ? decisao.lacunasPreenchidas.length : null;
   let status: StatusImportacao;
   if (rejeitada) status = "REJEITADA";
   else if (decisao?.bloqueada) status = "BLOQUEADA";
   else if (decisao && decisao.inserir.length === 0 && decisao.conflitos.length === 0 && decisao.quarentena.length === 0 && erros === 0) status = "SEM_NOVIDADES";
   else if (erros > 0 || (decisao?.conflitos.length ?? 0) > 0 || (quarentena ?? 0) > 0) status = "COM_ERROS";
-  else if (avisos > 0 || (nsrsEmLacuna ?? 0) > 0) status = "COM_AVISOS";
+  else if (avisos > 0 || (nsrsEmLacuna ?? 0) > 0 || (lacunasPreenchidas ?? 0) > 0 || decisao?.lacunasTruncadasEm !== undefined) status = "COM_AVISOS";
   else status = "OK";
   return {
     status,
@@ -61,6 +64,7 @@ export function relatorioImportacao<T extends LinhaParaDecisao>(parse: Resultado
     conflitos: decisao ? decisao.conflitos.length : null,
     quarentena,
     nsrsEmLacuna,
+    lacunasPreenchidas,
     retidasPorBloqueio: decisao ? decisao.retidasPorBloqueio.length : null,
     crcInvalido: conta("CRC_INVALIDO"),
     cadeiaHashInvalida: conta("HASH_CADEIA_INVALIDA"),
@@ -85,13 +89,33 @@ export function inconsistenciasDaImportacao<T extends LinhaParaDecisao & { numer
     for (const l of decisao.lacunas) {
       lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: l.de, mensagem: l.de === l.ate ? `NSR ${l.de} ausente; colete de novo a partir dele.` : `NSRs ${l.de} a ${l.ate} ausentes; colete de novo a partir do ${l.de}.` });
     }
+    if (decisao.lacunasTruncadasEm !== undefined) {
+      lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: decisao.lacunasTruncadasEm, mensagem: `A análise de lacunas parou no NSR ${decisao.lacunasTruncadasEm - 1} (limite de 1 milhão de NSRs por importação); pode haver mais lacunas a partir do ${decisao.lacunasTruncadasEm}.` });
+    }
+    // P8-R2-01: preenchimentos de lacuna, agrupados em faixas contíguas
+    const preenchidos = decisao.lacunasPreenchidas.map(x => x.nsr).sort((a, b) => a - b);
+    for (let i = 0; i < preenchidos.length; ) {
+      let j = i;
+      while (j + 1 < preenchidos.length && preenchidos[j + 1] === preenchidos[j] + 1) j++;
+      const de = preenchidos[i];
+      const ate = preenchidos[j];
+      lista.push({ codigo: "PREENCHIMENTO_DE_LACUNA", severidade: "aviso", nsr: de, mensagem: de === ate ? `NSR ${de} preencheu uma lacuna antiga deste REP (data e hora coerentes com os vizinhos). Confira se a re-coleta era esperada.` : `NSRs ${de} a ${ate} preencheram uma lacuna antiga deste REP (data e hora coerentes com os vizinhos). Confira se a re-coleta era esperada.` });
+      i = j + 1;
+    }
+    const MENSAGENS: Partial<Record<CodigoInconsistencia, (nsr: number) => string>> = {
+      NSR_ABAIXO_DO_CURSOR: nsr => `NSR ${nsr} está abaixo do último NSR importado deste REP e não existe na base: possível reset ou troca do relógio. Registro retido para o RH confirmar.`,
+      LACUNA_INCOERENTE: nsr => `NSR ${nsr} preencheria uma lacuna antiga, mas a data e hora não fica entre as dos NSRs vizinhos já gravados: possível registro forjado ou relógio ajustado. Registro retido para o RH.`,
+      NSR_SALTO_ANOMALO: nsr => `NSR ${nsr} salta muito acima do último NSR confiável deste REP: possível NSR corrompido. Registro retido para o RH e o cursor não avançou.`,
+      ESTADO_INCOMPLETO: nsr => `NSR ${nsr} está na faixa já gravada deste REP, mas o sistema não informou o hash dele nem uma lacuna conhecida que o contenha. Registro retido; confira a base antes de reimportar.`,
+    };
     for (const q of decisao.quarentena) {
-      if (q.motivos.includes("NSR_ABAIXO_DO_CURSOR")) {
-        lista.push({ codigo: "NSR_ABAIXO_DO_CURSOR", severidade: "erro", nsr: q.registro.nsr, numeroLinha: q.registro.numeroLinha, mensagem: `NSR ${q.registro.nsr} está abaixo do último NSR importado deste REP e não existe na base: possível reset ou troca do relógio. Registro retido para o RH confirmar.` });
+      for (const motivo of q.motivos) {
+        const msg = MENSAGENS[motivo];
+        if (msg) lista.push({ codigo: motivo, severidade: "erro", nsr: q.registro.nsr, numeroLinha: q.registro.numeroLinha, mensagem: msg(q.registro.nsr) });
       }
     }
     if (decisao.quarentena.length > 0) {
-      lista.push({ codigo: "NSR_QUARENTENA", severidade: "erro", mensagem: `${decisao.quarentena.length} registro(s) em quarentena (erro grave, NSR repetido com conteúdo diferente ou abaixo do cursor). Não viraram marcação; ficam pendentes para o RH.` });
+      lista.push({ codigo: "NSR_QUARENTENA", severidade: "erro", mensagem: `${decisao.quarentena.length} registro(s) em quarentena (erro grave, NSR repetido com conteúdo diferente, abaixo do cursor, lacuna incoerente, salto anômalo ou estado incompleto). Não viraram marcação; ficam pendentes para o RH.` });
     }
     if (decisao.retrocesso) {
       const r = decisao.retrocesso;

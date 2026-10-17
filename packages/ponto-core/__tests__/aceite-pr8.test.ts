@@ -124,9 +124,13 @@ describe("P8-03: NSR abaixo do último importado e ausente da base", () => {
     expect(d.quarentena.map(q => q.motivos)).toEqual([["NSR_ABAIXO_DO_CURSOR"]]);
   });
 
-  it("dentro da faixa já gravada (re-coleta de lacuna) é inserido", () => {
-    const d = decidirImportacao({ ultimoNsr: 510, primeiroNsr: 500, hashesPorNsr: new Map([[500, "a"], [510, "b"]]) }, [{ nsr: 505, linhaHash: "c" }]);
+  it("dentro de lacuna declarada (re-coleta), com data e hora coerente, é inserido (P8-R2-01/03)", () => {
+    const d = decidirImportacao(
+      { ultimoNsr: 510, primeiroNsr: 500, hashesPorNsr: new Map([[500, "a"], [510, "b"]]), instantesPorNsr: new Map([[500, 1_000], [510, 9_000]]), lacunasConhecidas: [{ de: 501, ate: 509 }] },
+      [{ nsr: 505, linhaHash: "c", instante: 5_000 }],
+    );
     expect(d.inserir.map(x => x.nsr)).toEqual([505]);
+    expect(d.lacunasPreenchidas.map(x => x.nsr)).toEqual([505]);
     expect(d.quarentena).toEqual([]);
   });
 });
@@ -135,7 +139,7 @@ describe("P8-04: empregador fora da empresa", () => {
   it("cabeçalho com CNPJ válido de outra empresa → EMPREGADOR_FORA_DA_EMPRESA (erro) e REJEITADA", () => {
     const r = parse(linhasRepC(), { empregadoresPermitidos: ["99.888.777/0001-00"] });
     // cabeçalho (rejeita o arquivo) e o tipo 2 da fixture, que também traz o CNPJ do empregador
-    expect(r.inconsistencias).toMatchObject([{ codigo: "EMPREGADOR_FORA_DA_EMPRESA", severidade: "erro", numeroLinha: 1 }, { codigo: "EMPREGADOR_FORA_DA_EMPRESA", severidade: "erro", nsr: 1 }]);
+    expect(r.inconsistencias.filter(i => i.codigo === "EMPREGADOR_FORA_DA_EMPRESA")).toMatchObject([{ severidade: "erro", numeroLinha: 1 }, { severidade: "erro", nsr: 1 }]);
     expect(r.motivosRejeicao).toEqual(["EMPREGADOR_FORA_DA_EMPRESA"]);
     const d = planejarImportacao(vazio, r);
     expect(d.inserir).toEqual([]);
@@ -162,7 +166,9 @@ describe("P8-04: empregador fora da empresa", () => {
     const linha = comCrc(outro.slice(0, -4));
     const r = parse(trocar(linhasRepC(), 1, linha), { empregadoresPermitidos: [CNPJ_EMPREGADOR] });
     const d = planejarImportacao(vazio, r);
-    expect(d.quarentena.map(q => [q.registro.nsr, q.motivos])).toEqual([[1, expect.arrayContaining(["EMPREGADOR_FORA_DA_EMPRESA"])]]);
+    expect(d.quarentena[0]).toMatchObject({ registro: { nsr: 1 }, motivos: expect.arrayContaining(["EMPREGADOR_FORA_DA_EMPRESA"]) });
+    // P8-R2-04: as marcações depois dele também ficam retidas (ver aceite-pr8-r2.test.ts)
+    expect(d.inserir.filter(x => x.tipo === "3")).toEqual([]);
     expect(r.motivosRejeicao).toEqual([]);
   });
 });

@@ -12,6 +12,9 @@ import type {
   TipoRegistroComNsr, TipoRep, Trailer,
 } from "./tipos";
 
+/** Array vazio compartilhado pelos registros sem problema (congelado: quem acrescenta faz cópia). */
+const SEM_CODIGOS = Object.freeze([]) as unknown as CodigoInconsistencia[];
+
 interface LinhaLida {
   numeroLinha: number;
   texto: string;
@@ -124,7 +127,6 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
   const sevHash = opcoes.cadeiaHash ?? "aviso";
 
   let posicaoRegistro = 0;
-  let nsrAnterior: number | null = null;
   const nsrsVistos = new Set<number>();
   let hashAnterior: string | null = opcoes.hashAnteriorInicial ?? null;
   // P8-05: sem hash anterior informado, o 1º elo só é verificável se o arquivo começa no NSR 1
@@ -132,6 +134,20 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
   let tipo7Vistos = 0;
   const permitidos = opcoes.empregadoresPermitidos ? new Set(opcoes.empregadoresPermitidos.map(v => normalizarEmpregador(v)).filter(Boolean)) : null;
   let depoisDoTrailer = 0;
+  // P8-R2-04: depois de um tipo 2 com empregador de fora, as marcações ficam em quarentena até um tipo 2 permitido
+  let empregadorVigenteDeFora = false;
+
+  // P8-R2-05 (memória): marcações repetem muito o mesmo minuto; a data e hora lida é compartilhada (objeto congelado)
+  const cacheDh = new Map<string, DataHoraAfd | null>();
+  const lerDataHoraComCache = (texto: string): DataHoraAfd | null => {
+    let v = cacheDh.get(texto);
+    if (v === undefined) {
+      v = lerDataHora(texto);
+      if (v) Object.freeze(v);
+      if (cacheDh.size < 200_000) cacheDh.set(texto, v);
+    }
+    return v;
+  };
 
   const invalida = (l: LinhaLida, linhaHash: string, motivo: CodigoInconsistencia, tipo: string | null, nsr: number | null) => {
     const item: LinhaInvalida = { numeroLinha: l.numeroLinha, linhaBruta: l.texto, linhaHash, tipo, nsr, motivo };
@@ -242,16 +258,12 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     if (primeiroNsrDoArquivo === null) primeiroNsrDoArquivo = nsr;
     // P8-08: o NSR começa em 1 (FAQ 41; Anexo IX)
     if (nsr === 0) prob("CAMPO_INVALIDO", "erro", "NSR 000000000 em registro: a numeração começa em 1.", "nsr");
-    if (nsrsVistos.has(nsr)) {
-      prob("NSR_DUPLICADO_NO_ARQUIVO", "erro", `NSR ${nsr} repetido no arquivo.`);
-    } else if (nsrAnterior !== null && nsr < nsrAnterior) {
-      prob("NSR_FORA_DE_ORDEM", "erro", `NSR ${nsr} depois do ${nsrAnterior}; o arquivo deve estar ordenado por NSR.`);
-    }
+    // NSR repetido aqui; a ordem é conferida depois da leitura (P8-R2-02: precisa do CRC e do registro seguinte)
+    if (nsrsVistos.has(nsr)) prob("NSR_DUPLICADO_NO_ARQUIVO", "erro", `NSR ${nsr} repetido no arquivo.`);
     nsrsVistos.add(nsr);
-    nsrAnterior = nsr;
 
     const dh = (inicio: number, fim: number, nome: string, obrigatorio = true): DataHoraAfd | null => {
-      const v = lerDataHora(campo(t, inicio, fim));
+      const v = lerDataHoraComCache(campo(t, inicio, fim));
       if (!v) {
         if (obrigatorio) prob("CAMPO_INVALIDO", "erro", `Data e hora inválida no campo "${nome}" (formato AAAA-MM-ddThh:mm:00ZZZZZ).`, nome);
         return null;
@@ -277,7 +289,7 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
       if (!cpfValido(v)) prob("CPF_INVALIDO", "aviso", `CPF do campo "${nome}" com dígito verificador inválido.`, nome);
       return v;
     };
-    const base = { numeroLinha: l.numeroLinha, linhaBruta: t, linhaHash, nsr, problemas, errosGraves };
+    const base = { numeroLinha: l.numeroLinha, linhaBruta: t, linhaHash, nsr, instante: null, problemas, errosGraves };
 
     let registro: Registro;
     switch (tipoNsr) {
@@ -291,7 +303,10 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
         };
         if (!idEmpregadorValido(tpId, id)) prob("CNPJ_CPF_INVALIDO", "aviso", "CNPJ/CPF do empregador inválido no registro tipo 2.", "idEmpregador");
         if (permitidos && !permitidos.has(normalizarEmpregador(id, tpId))) {
-          prob("EMPREGADOR_FORA_DA_EMPRESA", "erro", "Registro tipo 2 (inclusão ou alteração do empregador no REP) com CNPJ/CPF que não é desta empresa.", "idEmpregador");
+          prob("EMPREGADOR_FORA_DA_EMPRESA", "erro", "Registro tipo 2 (inclusão ou alteração do empregador no REP) com CNPJ/CPF que não é desta empresa. As marcações seguintes ficam em quarentena até um tipo 2 desta empresa.", "idEmpregador");
+          empregadorVigenteDeFora = true;
+        } else if (permitidos) {
+          empregadorVigenteDeFora = false;
         }
         if (numericoOpcional(campo(t, 64, 77)) === null) prob("CAMPO_INVALIDO", "erro", 'CNO/CAEPF não numérico.', "cnoCaepf");
         break;
@@ -346,9 +361,18 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
         break;
       }
     }
+    if (empregadorVigenteDeFora && (tipoNsr === "3" || tipoNsr === "7")) {
+      prob("MARCACAO_SOB_OUTRO_EMPREGADOR", "erro", "Marcação feita depois de um registro tipo 2 que trocou o empregador do REP para um CNPJ/CPF que não é desta empresa.");
+    }
     if (TIPOS_COM_CRC.has(tipoNsr)) conferirCrc(t, l.numeroLinha, nsr, problemas, errosGraves);
+    registro.instante = instanteSequencial(registro);
+    // P8-R2-05 (memória): registro sem problema compartilha um array vazio congelado (cópia ao acrescentar)
+    if (problemas.length === 0) registro.problemas = SEM_CODIGOS;
+    if (errosGraves.length === 0) registro.errosGraves = SEM_CODIGOS;
     resultado.registros.push(registro);
   }
+
+  conferirOrdemNsr(resultado.registros, add);
 
   // Estrutura do arquivo
   if (!resultado.cabecalho && !resultado.invalidas.some(i => i.tipo === "1")) add("CABECALHO_AUSENTE", "erro", "Arquivo sem cabeçalho (registro tipo 1).");
@@ -375,11 +399,66 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
       const dhMarcacao = r.tipo === "3" || r.tipo === "7" ? r.marcadoEm : null;
       if (dhMarcacao && (dhMarcacao.dataLocal < cab.dataInicial || dhMarcacao.dataLocal > cab.dataFinal)) {
         add("DATA_FORA_DO_PERIODO", "aviso", `Marcação em ${dhMarcacao.dataLocal}, fora do período do cabeçalho (${cab.dataInicial} a ${cab.dataFinal}).`, { numeroLinha: r.numeroLinha, nsr: r.nsr });
-        if (!r.problemas.includes("DATA_FORA_DO_PERIODO")) r.problemas.push("DATA_FORA_DO_PERIODO");
+        if (!r.problemas.includes("DATA_FORA_DO_PERIODO")) r.problemas = [...r.problemas, "DATA_FORA_DO_PERIODO"];
       }
     }
   }
   return resultado;
+}
+
+/**
+ * Instante (ms desde 1970, UTC) que ordena o registro na sequência do REP, usado na coerência NSR × data e hora
+ * (P8-R2-01): tipo 3 marcação; tipo 4 hora antes do ajuste; tipo 7 gravação (o NSR segue a gravação, inclusive
+ * offline); tipos 2, 5 e 6 gravação. A F2 deve gravar este mesmo valor por NSR e devolvê-lo em `instantesPorNsr`.
+ */
+export function instanteSequencial(r: Registro): number | null {
+  let dh: DataHoraAfd | null;
+  switch (r.tipo) {
+    case "3": dh = r.marcadoEm; break;
+    case "4": dh = r.antes; break;
+    case "7": dh = r.gravadoEm ?? r.marcadoEm; break;
+    default: dh = r.gravadoEm;
+  }
+  if (!dh) return null;
+  const ms = Date.parse(dh.utc);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Ordem dos NSRs (P8-R2-02). Regras:
+ * - o cursor (último NSR confiável) só avança por registro com CRC válido; com CRC inválido (inclusive REP-C, em
+ *   que o CRC é aviso) o registro não avança o cursor. Se nenhum registro com CRC do arquivo confere (algoritmo do
+ *   relógio diferente), o CRC não é usado como critério;
+ * - NSR abaixo do cursor → `NSR_FORA_DE_ORDEM` nele;
+ * - "pico": NSR maior que o seguinte, com o seguinte acima do cursor e o depois do seguinte também abaixo do pico
+ *   (ex.: 5, 900000006, 7, 8) → o pico é o registro fora de ordem, não o vizinho legítimo;
+ * - NSR repetido já foi marcado na leitura e não entra nesta conferência.
+ */
+function conferirOrdemNsr(registros: Registro[], add: Add) {
+  const marcar = (r: Registro, mensagem: string) => {
+    add("NSR_FORA_DE_ORDEM", "erro", mensagem, { numeroLinha: r.numeroLinha, nsr: r.nsr });
+    if (!r.problemas.includes("NSR_FORA_DE_ORDEM")) r.problemas = [...r.problemas, "NSR_FORA_DE_ORDEM"];
+    if (!r.errosGraves.includes("NSR_FORA_DE_ORDEM")) r.errosGraves = [...r.errosGraves, "NSR_FORA_DE_ORDEM"];
+  };
+  const comCrc = registros.filter(r => TIPOS_COM_CRC.has(r.tipo));
+  const crcConfiavel = comCrc.some(r => !r.problemas.includes("CRC_INVALIDO"));
+  const candidatos = registros.filter(r => !r.problemas.includes("NSR_DUPLICADO_NO_ARQUIVO"));
+  let cursor: number | null = null;
+  for (let i = 0; i < candidatos.length; i++) {
+    const r = candidatos[i];
+    if (cursor !== null && r.nsr < cursor) {
+      marcar(r, `NSR ${r.nsr} depois do ${cursor}; o arquivo deve estar ordenado por NSR.`);
+      continue;
+    }
+    const seguinte = candidatos[i + 1];
+    const depois = candidatos[i + 2];
+    if (seguinte && seguinte.nsr < r.nsr && (cursor === null || seguinte.nsr > cursor) && (!depois || depois.nsr < r.nsr)) {
+      marcar(r, `NSR ${r.nsr} fora da sequência: é maior que os seguintes (${seguinte.nsr}). Possível NSR corrompido; o registro não avança a sequência.`);
+      continue;
+    }
+    const crcRuim = r.problemas.includes("CRC_INVALIDO");
+    if (!crcRuim || !crcConfiavel) cursor = r.nsr;
+  }
 }
 
 function idEmpregadorValido(tpId: string, id: string): boolean {

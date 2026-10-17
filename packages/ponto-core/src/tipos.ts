@@ -30,6 +30,8 @@ export type CodigoInconsistencia =
   | "HASH_CADEIA_INVALIDA"
   | "CADEIA_NAO_VERIFICAVEL"
   | "EMPREGADOR_FORA_DA_EMPRESA"
+  // P8-R2-04: marcação depois de um tipo 2 que trocou o empregador para fora da empresa
+  | "MARCACAO_SOB_OUTRO_EMPREGADOR"
   | "NSR_FORA_DE_ORDEM"
   | "NSR_DUPLICADO_NO_ARQUIVO"
   | "DATA_FORA_DO_PERIODO"
@@ -44,7 +46,14 @@ export type CodigoInconsistencia =
   | "NSR_LACUNA"
   | "NSR_RETROCESSO"
   | "NSR_ABAIXO_DO_CURSOR"
-  | "NSR_QUARENTENA";
+  | "NSR_QUARENTENA"
+  // P8-R2-01: preenchimento de lacuna (aviso) e lacuna incoerente com os vizinhos gravados (quarentena)
+  | "PREENCHIMENTO_DE_LACUNA"
+  | "LACUNA_INCOERENTE"
+  // P8-R2-02: NSR muito acima do esperado
+  | "NSR_SALTO_ANOMALO"
+  // P8-R2-03: estado de entrada sem o hash de NSR que ele diz estar gravado
+  | "ESTADO_INCOMPLETO";
 
 export interface Inconsistencia {
   codigo: CodigoInconsistencia;
@@ -84,6 +93,8 @@ export interface Cabecalho extends LinhaBase {
 
 interface RegistroBase extends LinhaBase {
   nsr: number;
+  /** P8-R2-01: instante (ms UTC) que ordena o registro na sequência do REP (`instanteSequencial`); null se a DH é inválida. */
+  instante: number | null;
   /** Códigos das inconsistências que atingem este registro (o registro continua sendo lido). */
   problemas: CodigoInconsistencia[];
   /** Subconjunto de `problemas` com severidade "erro": o pipeline põe o registro em quarentena (P8-01). */
