@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=InjetaFlow ERP
+Comment=Iniciar o ambiente local do InjetaFlow ERP
+Exec=/bin/bash -lc "$HOME/.local/bin/injetaflow-launcher"
+Icon=applications-system
+Terminal=false
+Categories=Office;Development;
+StartupNotify=true
