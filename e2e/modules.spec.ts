@@ -75,8 +75,51 @@ test("campos numéricos aceitam só números (quantidade da ordem)", async ({ pa
   await page.goto("/ordens");
   await page.getByRole("button", { name: "Nova ordem" }).first().click();
   const qty = page.getByRole("dialog").locator('input[name="quantidade"]');
-  await expect(qty).toHaveAttribute("type", "number");
   await expect(qty).toHaveAttribute("inputmode", "numeric");
   await qty.pressSequentially("-12e3abc");
   await expect(qty).toHaveValue("123");
+  // caractere recusado gera aviso visível (não some em silêncio)
+  await expect(page.getByRole("dialog").getByText(/digite apenas números/)).toBeVisible();
+});
+
+test("N04: '1.5' em campo inteiro fica visível com erro e nunca vira 15", async ({ page }) => {
+  await login(page);
+  await page.goto("/ordens");
+  await page.getByRole("button", { name: "Nova ordem" }).first().click();
+  const dialog = page.getByRole("dialog");
+  const qty = dialog.locator('input[name="quantidade"]');
+  await qty.pressSequentially("1.5");
+  await expect(qty).toHaveValue("1.5");
+  await expect(dialog.getByText("Quantidade planejada: use um número inteiro, sem vírgula ou ponto (ex.: 1500).")).toBeVisible();
+  await qty.fill("");
+  await qty.pressSequentially("1,5");
+  await expect(qty).toHaveValue("1,5");
+  await expect(qty).toHaveAttribute("aria-invalid", "true");
+});
+
+test("N10: formulário do ERP mostra mensagens em português junto ao campo (sem balão nativo)", async ({ page }) => {
+  await login(page);
+  await page.goto("/ordens");
+  await page.getByRole("button", { name: "Nova ordem" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator("form")).toHaveAttribute("novalidate", "");
+  await dialog.getByRole("button", { name: /Salvar|Criar|Cadastrar/ }).last().click();
+  await expect(dialog.getByText("Produto: obrigatório.").first()).toBeVisible();
+  await expect(dialog.getByText("Quantidade planejada: obrigatório (informe um número).").first()).toBeVisible();
+  await expect(dialog).toBeVisible();
+});
+
+test("N05: meta de produção diária aparece em Configurações e vazio é recusado", async ({ page }) => {
+  await login(page);
+  await page.goto("/configuracoes");
+  const meta = page.locator('input[name="metaProducaoDiaria"]');
+  await expect(meta).toBeVisible();
+  await meta.fill("");
+  await page.getByRole("button", { name: /Salvar/ }).first().click();
+  await expect(page.getByText(/Meta de produção diária \(peças\): obrigatório/).first()).toBeVisible();
+  await meta.fill("15000");
+  await page.getByRole("button", { name: /Salvar/ }).first().click();
+  await expect(page.getByText("Dados da empresa salvos")).toBeVisible();
+  await page.reload();
+  await expect(page.locator('input[name="metaProducaoDiaria"]')).toHaveValue("15000");
 });

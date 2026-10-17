@@ -9,7 +9,7 @@ import {
 } from "./auth";
 import { verifyPassword } from "./password";
 import { actorOf, audit, type AuditEntry } from "./audit";
-import { consumeRawMaterial, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, summarize, updateRecord, type RecordData } from "./records";
+import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, summarize, updateRecord, type RecordData } from "./records";
 import { historico, ORIGENS_PONTO, presenca, registrarPonto, relatorio, relatorioCsv, TIPOS_PONTO } from "./rh";
 import { dashboardSummary } from "./dashboard";
 import { createUser, deleteUser, listUsers, updateUser, userCreateSchema, userUpdateSchema } from "./users";
@@ -130,7 +130,7 @@ export const recordsRouter = router({
     return exportCsv(ctx.repo, ctx.user.empresaId, module, query);
   }),
   consumirMateriaPrima: moduleProcedure("materia_prima", "editar")
-    .input(z.object({ id: z.string().min(1), quantidade: z.number().positive("Quantidade deve ser maior que zero"), documento: z.string().max(120).optional() }))
+    .input(z.object({ id: z.string().min(1), quantidade: numericSchema({ label: "Quantidade (kg)", min: 0.001 }), documento: z.string().max(120).optional() }))
     .mutation(({ ctx, input }) => consumeRawMaterial(ctx.repo, ctx.user, input.id, input.quantidade, input.documento)),
   searchAll: protectedProcedure.input(z.object({ q: z.string().trim().min(1).max(100) })).query(async ({ ctx, input }) => {
     const results: { module: string; route: string; moduleLabel: string; id: string; titulo: string; subtitulo: string }[] = [];
@@ -205,8 +205,9 @@ const configSchema = z.object({
   nomeExibicao: z.string().trim().min(2).max(120),
   unidade: z.string().trim().max(120).optional(),
   fusoHorario: z.string().trim().max(60),
-  metaProducaoDiaria: z.coerce.number().min(0).max(100000000),
-  metaRefugoPct: z.coerce.number().min(0).max(100),
+  // N05: "" não vira 0; mesma regra numérica dos formulários
+  metaProducaoDiaria: numericSchema({ label: "Meta de produção diária (peças)", integer: true }),
+  metaRefugoPct: numericSchema({ label: "Meta de refugo (%)", max: 100 }),
 });
 
 export const configRouter = router({

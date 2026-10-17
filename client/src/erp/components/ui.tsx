@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode }
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { Loader2, MoreHorizontal, X } from "lucide-react";
 import { toneFor, type Tone } from "../format";
-import { BLOCKED_NUMBER_KEYS, parseNumeric } from "@shared/erp/numbers";
+import { numericError } from "@shared/erp/numbers";
 
 const TONES: Record<Tone, { color: string; background: string }> = {
   teal: { color: "#0a8f80", background: "#e4faf6" },
@@ -144,35 +144,55 @@ export function useDebounced<T>(value: T, delay = 300): T {
 }
 
 /**
- * Campo numérico (quantidade, valor, peso, estoque, ciclo, cavidades...): só aceita dígitos e,
- * se não for inteiro, um separador decimal. Bloqueia "e", "+", "-" e colagem de texto (B-NUM).
+ * Campo numérico (quantidade, valor, peso, estoque, ciclo, cavidades...).
+ * - teclado numérico no celular (inputMode) e só aceita dígitos e separador decimal;
+ * - qualquer outro caractere é recusado COM aviso (nunca some em silêncio);
+ * - N04: em campo inteiro, "1.5"/"1,5" fica visível e com erro em vez de virar 15;
+ * - N03/N10: mínimo, máximo e casas decimais validados com mensagem em português junto ao campo.
  */
-export function NumberInput({ value, onChange, integer, min = 0, max, step, ...rest }: {
-  value: string; onChange: (value: string) => void; integer?: boolean; min?: number; max?: number; step?: string;
+export function NumberInput({ value, onChange, integer, money, min = 0, max, label = "Valor", step: _step, ...rest }: {
+  value: string; onChange: (value: string) => void; integer?: boolean; money?: boolean; min?: number; max?: number; label?: string; step?: string;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type" | "min" | "max" | "step">) {
+  const [warning, setWarning] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const warn = (message: string) => {
+    setWarning(message);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setWarning(null), 3500);
+  };
+  const rule = { label, integer, money, min, max };
+  const liveError = value.trim() ? numericError(value, rule) : null;
+  const message = warning ?? liveError;
+  const accept = (text: string) => /^[0-9.,]*$/.test(text) && (text.match(/[.,]/g) ?? []).length <= 1;
   return (
-    <input
-      {...rest}
-      type="number"
-      inputMode={integer ? "numeric" : "decimal"}
-      pattern={integer ? "[0-9]*" : undefined}
-      min={min}
-      max={max}
-      step={step ?? (integer ? "1" : "any")}
-      value={value}
-      onKeyDown={event => {
-        if (BLOCKED_NUMBER_KEYS.includes(event.key) || (integer && (event.key === "." || event.key === ","))) event.preventDefault();
-        rest.onKeyDown?.(event);
-      }}
-      onPaste={event => {
-        const text = event.clipboardData.getData("text").trim();
-        if (parseNumeric(text) === null || text.startsWith("-")) {
-          event.preventDefault();
-          return;
-        }
-      }}
-      onWheel={event => (event.currentTarget as HTMLInputElement).blur()}
-      onChange={event => onChange(event.target.value)}
-    />
+    <>
+      <input
+        {...rest}
+        type="text"
+        inputMode={integer ? "numeric" : "decimal"}
+        autoComplete="off"
+        data-numeric={integer ? "integer" : "decimal"}
+        aria-invalid={Boolean(liveError) || rest["aria-invalid"] === true || undefined}
+        value={value}
+        onChange={event => {
+          const next = event.target.value.replace(/\s+/g, "");
+          if (!accept(next)) {
+            warn(`${label}: digite apenas números${integer ? " inteiros" : ""}${min >= 0 ? " (sem sinal de menos)" : ""}.`);
+            return;
+          }
+          setWarning(null);
+          onChange(next);
+        }}
+        onPaste={event => {
+          const text = event.clipboardData.getData("text").trim();
+          if (!accept(text)) {
+            event.preventDefault();
+            warn(`${label}: o texto colado não é um número válido.`);
+          }
+        }}
+      />
+      {message && <small className="erp-field-error" role="alert">{message}</small>}
+    </>
   );
 }

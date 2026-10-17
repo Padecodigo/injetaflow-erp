@@ -65,20 +65,26 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    // validação numérica no cliente, com a mesma regra do servidor
+    // N10: validação no cliente em português, junto ao campo (mesma regra do servidor)
     const errors: Record<string, string> = {};
     for (const field of fields) {
-      if (field.type !== "number" && field.type !== "money") continue;
       const raw = values[field.name]?.trim() ?? "";
-      if (!raw && !field.required) continue;
-      const message = raw ? numericError(raw, { label: field.label, integer: field.integer, min: field.min, max: field.max }) : `${field.label}: obrigatório (informe um número).`;
-      if (message) errors[field.name] = message;
+      if (!raw) {
+        if (field.required && !(editing && field.hiddenOnCreate)) errors[field.name] = field.type === "number" || field.type === "money" ? `${field.label}: obrigatório (informe um número).` : `${field.label}: obrigatório.`;
+        continue;
+      }
+      if (field.type === "number" || field.type === "money") {
+        const message = numericError(raw, { label: field.label, integer: field.integer, min: field.min, max: field.max, money: field.type === "money" });
+        if (message) errors[field.name] = message;
+      } else if (field.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+        errors[field.name] = `${field.label}: e-mail inválido.`;
+      }
     }
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       const message = Object.values(errors).join(" ");
       setError(message);
-      toast.error("Confira os campos numéricos", { description: message });
+      toast.error("Confira os campos destacados", { description: message });
       return;
     }
     const data: Record<string, unknown> = {};
@@ -107,7 +113,7 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
 
   return (
     <Modal wide title={title ?? (editing ? `Editar ${mod.singular}` : mod.createLabel)} eyebrow={mod.label} icon={editing ? <Pencil size={20} /> : <Plus size={21} />} description={editing ? `Altere os dados e salve. ${mod.autoCode && record ? `Código ${String(record[mod.autoCode.field])}.` : ""}` : mod.description} onClose={onClose}>
-      <form onSubmit={submit} noValidate={false} aria-label={editing ? `Editar ${mod.singular}` : mod.createLabel}>
+      <form onSubmit={submit} noValidate aria-label={editing ? `Editar ${mod.singular}` : mod.createLabel}>
         <div className="action-fields erp-form-grid">
           {fields.map(field => (
             <label className={`modal-field ${field.type === "textarea" ? "erp-span-2" : ""}`} key={field.name}>
@@ -124,10 +130,11 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
               ) : field.type === "number" || field.type === "money" ? (
                 <NumberInput
                   name={field.name}
+                  label={field.label}
                   integer={field.integer}
+                  money={field.type === "money"}
                   min={field.min ?? 0}
                   max={field.max}
-                  step={field.type === "money" ? "0.01" : undefined}
                   required={field.required}
                   placeholder={field.placeholder ?? (field.integer ? "Somente números" : "0")}
                   aria-invalid={Boolean(fieldErrors[field.name])}
@@ -144,7 +151,7 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
                   onChange={event => set(field.name, event.target.value)}
                 />
               )}
-              {fieldErrors[field.name] && <small className="erp-field-error" role="alert">{fieldErrors[field.name]}</small>}
+              {fieldErrors[field.name] && (!(field.type === "number" || field.type === "money") || !values[field.name]?.trim()) && <small className="erp-field-error" role="alert">{fieldErrors[field.name]}</small>}
             </label>
           ))}
         </div>

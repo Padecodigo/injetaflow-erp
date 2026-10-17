@@ -8,6 +8,7 @@ import { useSession } from "../session";
 import { toastError } from "../api";
 import { formatDateTime } from "../format";
 import { ModuleCrud, PageHeader } from "../components/ModuleCrud";
+import { numericError } from "@shared/erp/numbers";
 import { EmptyState, NumberInput, Pagination, Spinner, useDebounced } from "../components/ui";
 
 function EmpresaForm() {
@@ -20,10 +21,26 @@ function EmpresaForm() {
     if (config.data) setForm({ nomeExibicao: config.data.nomeExibicao, unidade: config.data.unidade ?? "", fusoHorario: config.data.fusoHorario, metaProducaoDiaria: String(config.data.metaProducaoDiaria), metaRefugoPct: String(config.data.metaRefugoPct) });
   }, [config.data]);
   const canEdit = can("configuracoes", "editar");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const emptyError = (key: keyof typeof form) => (!form[key].trim() && errors[key] ? <small className="erp-field-error" role="alert">{errors[key]}</small> : null);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // N05/N10: vazio não vira 0; mensagem em português junto ao campo
+    const errors: Record<string, string> = {};
+    if (!form.nomeExibicao.trim()) errors.nomeExibicao = "Nome de exibição: obrigatório.";
+    const metas = [["metaProducaoDiaria", { label: "Meta de produção diária (peças)", integer: true }], ["metaRefugoPct", { label: "Meta de refugo (%)", max: 100 }]] as const;
+    for (const [key, rule] of metas) {
+      const raw = form[key].trim();
+      const message = raw ? numericError(raw, rule) : `${rule.label}: obrigatório (informe um número).`;
+      if (message) errors[key] = message;
+    }
+    setErrors(errors);
+    if (Object.keys(errors).length) {
+      toast.error("Confira os campos destacados", { description: Object.values(errors).join(" ") });
+      return;
+    }
     try {
-      await update.mutateAsync({ ...form, metaProducaoDiaria: Number(form.metaProducaoDiaria), metaRefugoPct: Number(form.metaRefugoPct) });
+      await update.mutateAsync({ ...form, metaProducaoDiaria: form.metaProducaoDiaria.trim(), metaRefugoPct: form.metaRefugoPct.trim() });
       utils.config.get.invalidate();
       toast.success("Dados da empresa salvos");
     } catch (error) {
@@ -35,11 +52,12 @@ function EmpresaForm() {
     <section className="panel module-panel" aria-label="Dados da empresa">
       <div className="panel-heading"><div><span className="panel-kicker">Empresa</span><h2>Dados da empresa ativa</h2></div></div>
       {config.isLoading ? <Spinner /> : (
-        <form className="erp-form-grid erp-form-grid--4" onSubmit={submit}>
-          <label className="modal-field"><span>Nome de exibição</span><input disabled={!canEdit} required value={form.nomeExibicao} onChange={set("nomeExibicao")} /></label>
+        <form className="erp-form-grid erp-form-grid--4" onSubmit={submit} noValidate aria-label="Dados da empresa">
+          <label className="modal-field"><span>Nome de exibição</span><input disabled={!canEdit} required value={form.nomeExibicao} onChange={set("nomeExibicao")} />{emptyError("nomeExibicao")}</label>
           <label className="modal-field"><span>Unidade</span><input disabled={!canEdit} value={form.unidade} onChange={set("unidade")} /></label>
           <label className="modal-field"><span>Fuso horário</span><select disabled={!canEdit} value={form.fusoHorario} onChange={set("fusoHorario")}><option>America/Sao_Paulo</option><option>America/Manaus</option><option>America/Recife</option></select></label>
-          <label className="modal-field"><span>Meta de refugo (%)</span><NumberInput disabled={!canEdit} max={100} step="0.1" value={form.metaRefugoPct} onChange={value => set("metaRefugoPct")({ target: { value } })} /></label>
+          <label className="modal-field"><span>Meta de produção diária (peças)</span><NumberInput name="metaProducaoDiaria" label="Meta de produção diária (peças)" integer disabled={!canEdit} required value={form.metaProducaoDiaria} onChange={value => set("metaProducaoDiaria")({ target: { value } })} />{emptyError("metaProducaoDiaria")}</label>
+          <label className="modal-field"><span>Meta de refugo (%)</span><NumberInput name="metaRefugoPct" label="Meta de refugo (%)" disabled={!canEdit} max={100} required value={form.metaRefugoPct} onChange={value => set("metaRefugoPct")({ target: { value } })} />{emptyError("metaRefugoPct")}</label>
           {canEdit && <div className="erp-span-4"><button className="button button--primary" disabled={update.isPending}>{update.isPending && <Loader2 size={15} className="erp-spin" />}Salvar dados da empresa</button></div>}
         </form>
       )}

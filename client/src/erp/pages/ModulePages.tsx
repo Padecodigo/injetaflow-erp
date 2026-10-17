@@ -80,8 +80,8 @@ function QuickApontamento() {
           </select>
         </label>
         <label className="modal-field"><span>Matrícula do operador *</span><input required value={form.matricula} onChange={set("matricula")} placeholder="Ex.: MAT-0001" aria-label="Matrícula do operador" /></label>
-        <label className="modal-field"><span>Peças boas *</span><NumberInput required integer value={form.quantidadeBoa} onChange={value => set("quantidadeBoa")({ target: { value } })} aria-label="Peças boas" /></label>
-        <label className="modal-field"><span>Refugo</span><NumberInput integer value={form.refugo} onChange={value => set("refugo")({ target: { value } })} aria-label="Refugo" /></label>
+        <label className="modal-field"><span>Peças boas *</span><NumberInput label="Peças boas" required integer value={form.quantidadeBoa} onChange={value => set("quantidadeBoa")({ target: { value } })} aria-label="Peças boas" /></label>
+        <label className="modal-field"><span>Refugo</span><NumberInput label="Refugo" integer value={form.refugo} onChange={value => set("refugo")({ target: { value } })} aria-label="Refugo" /></label>
         <label className="modal-field"><span>Turno *</span><select value={form.turno} onChange={set("turno")} aria-label="Turno">{MODULES.producao.fields.find(f => f.name === "turno")!.options!.map(o => <option key={o}>{o}</option>)}</select></label>
         <button className="button button--primary" type="submit" disabled={create.isPending}>{create.isPending ? <Loader2 size={15} className="erp-spin" /> : <ClipboardPlus size={15} />} Apontar</button>
       </form>
@@ -184,7 +184,7 @@ function ConsumoModal({ row, onClose }: { row: RecordRow; onClose: () => void })
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     try {
-      const out = await consume.mutateAsync({ id: row.id, quantidade: Number(quantidade), documento: documento || undefined });
+      const out = await consume.mutateAsync({ id: row.id, quantidade: quantidade.trim(), documento: documento || undefined });
       invalidateModule(utils, "materia_prima");
       toast.success("Saída registrada", { description: `Lote ${String(row.lote)} · saldo ${formatNumber(out.quantidade)} kg` });
       onClose();
@@ -195,7 +195,7 @@ function ConsumoModal({ row, onClose }: { row: RecordRow; onClose: () => void })
   return (
     <Modal title={`Saída do lote ${String(row.lote)}`} eyebrow="Matéria-prima" description={`Saldo atual: ${formatNumber(row.quantidade)} kg. A saída baixa o saldo do lote.`} onClose={onClose}>
       <form onSubmit={submit}>
-        <label className="modal-field"><span>Quantidade (kg) *</span><NumberInput min={0.001} required value={quantidade} onChange={setQuantidade} /></label>
+        <label className="modal-field"><span>Quantidade (kg) *</span><NumberInput label="Quantidade (kg)" min={0.001} required value={quantidade} onChange={setQuantidade} /></label>
         <label className="modal-field"><span>Documento / ordem</span><input value={documento} onChange={event => setDocumento(event.target.value)} placeholder="Ex.: OP-0001" /></label>
         <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancelar</button><button className="button button--primary" disabled={consume.isPending}>{consume.isPending && <Loader2 size={15} className="erp-spin" />}Registrar saída</button></div>
       </form>

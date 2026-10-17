@@ -28,7 +28,16 @@ export type ListQuery = {
   sortDir?: "asc" | "desc";
 };
 
-import { numericError, parseNumeric } from "@shared/erp/numbers";
+import { numericError, parseNumeric, type NumericRule } from "@shared/erp/numbers";
+
+/** Validador Zod de número (mesma regra do formulário): aceita número ou texto numérico. */
+export function numericSchema(rule: NumericRule) {
+  const obrigatorio = `${rule.label}: obrigatório (informe um número).`;
+  return z.union([z.string(), z.number()], { message: obrigatorio }).superRefine((value, ctx) => {
+    const error = value === "" ? obrigatorio : numericError(value, rule);
+    if (error) ctx.addIssue({ code: "custom", message: error });
+  }).transform(value => parseNumeric(value) as number);
+}
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -37,12 +46,8 @@ function fieldSchema(field: FieldDef): z.ZodTypeAny {
   switch (field.type) {
     case "number":
     case "money": {
-      // aceita só números (B-NUM): texto como "12abc", vazio ou negativo é recusado com mensagem clara
-      const rule = { label: field.label, integer: field.integer, min: field.min, max: field.max };
-      return z.union([z.string(), z.number()], { message: `${field.label}: obrigatório (informe um número).` }).superRefine((value, ctx) => {
-        const error = value === "" ? `${field.label}: obrigatório (informe um número).` : numericError(value, rule);
-        if (error) ctx.addIssue({ code: "custom", message: error });
-      }).transform(value => parseNumeric(value) as number);
+      // aceita só números: texto, vazio, negativo, gigante (N03) ou decimal em inteiro (N04) são recusados
+      return numericSchema({ label: field.label, integer: field.integer, min: field.min, max: field.max, money: field.type === "money" });
     }
     case "date":
       return z.string(required).regex(dateRegex, `${field.label}: data inválida (AAAA-MM-DD)`);

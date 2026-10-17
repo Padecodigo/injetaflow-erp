@@ -16,7 +16,7 @@ describe("campos numéricos aceitam só números (requisito do cliente: quantida
   it("numericError dá mensagem clara para texto, negativo, decimal em inteiro e limites", () => {
     expect(numericError("abc", { label: "Quantidade", integer: true })).toBe("Quantidade: use apenas números inteiros (ex.: 1500).");
     expect(numericError("-1", { label: "Peso" })).toBe("Peso: não pode ser negativo.");
-    expect(numericError("1,5", { label: "Cavidades", integer: true })).toBe("Cavidades: use um número inteiro, sem casas decimais.");
+    expect(numericError("1,5", { label: "Cavidades", integer: true })).toBe("Cavidades: use um número inteiro, sem vírgula ou ponto (ex.: 1500).");
     expect(numericError("0", { label: "Cavidades", integer: true, min: 1 })).toBe("Cavidades: o mínimo é 1.");
     expect(numericError("101", { label: "Concentração", max: 100 })).toBe("Concentração: o máximo é 100.");
     expect(numericError("10", { label: "Valor" })).toBeNull();
