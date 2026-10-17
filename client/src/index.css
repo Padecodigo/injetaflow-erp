@@ -466,3 +466,11 @@ tbody td { height: 53px; padding: 8px 10px; border-top: 1px solid #f0f2f4; color
 /* Cards de ação do ERP são botões reais, não apenas elementos decorativos. */
 button.help-card { width: 100%; border: 0; text-align: left; font: inherit; cursor: pointer; }
 button.help-card:hover { background: rgba(239,127,18,.08); }
+
+/* Formulários contextuais por módulo. */
+.action-modal { max-height: min(88vh, 760px); overflow-y: auto; }
+.action-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 16px; }
+.action-fields .modal-field:has(textarea), .action-fields .modal-field:has(select[name="modulos"]) { grid-column: 1 / -1; }
+.action-fields textarea, .action-fields select { width: 100%; min-height: 38px; padding: 10px; resize: vertical; outline: none; border: 1px solid #e1e5e6; border-radius: 7px; color: #3f474c; background: #fcfdfd; font: inherit; font-size: 11px; }
+.action-fields select { height: 38px; padding-block: 0; }
+@media (max-width: 600px) { .action-fields { grid-template-columns: 1fr; }.action-fields .modal-field:has(textarea), .action-fields .modal-field:has(select[name="modulos"]) { grid-column: auto; } }

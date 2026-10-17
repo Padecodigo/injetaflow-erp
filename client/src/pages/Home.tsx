@@ -329,7 +329,7 @@ function MetricCard({ label, value, change, trend, tone, icon: Icon, note }: (ty
   );
 }
 
-function PageHeader({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+function PageHeader({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   const isDashboard = current.href === "/dashboard";
   return (
     <div className="page-header">
@@ -340,7 +340,7 @@ function PageHeader({ current, onNewOrder, isLogged, userName }: { current: NavI
       </div>
       <div className="header-actions">
         <button className="button button--secondary"><Download size={16} /> Exportar</button>
-        <button className="button button--primary" onClick={onNewOrder}><Plus size={17} /> Nova ordem</button>
+        <button className="button button--primary" onClick={() => onNewOrder(current)}><Plus size={17} /> Nova ordem</button>
       </div>
     </div>
   );
@@ -405,7 +405,105 @@ function AlertsPanel() {
   );
 }
 
-function Dashboard({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+
+type ActionField = {
+  label: string;
+  name: string;
+  type?: "text" | "email" | "number" | "date" | "textarea" | "select";
+  placeholder?: string;
+  options?: string[];
+  required?: boolean;
+};
+
+type ActionDefinition = { title: string; description: string; fields: ActionField[] };
+
+const actionDefinitions: Record<string, ActionDefinition> = {
+  "/dashboard": { title: "Nova ordem de produção", description: "Informe os dados essenciais para planejar uma nova ordem de injeção.", fields: [
+    { label: "Produto", name: "produto", placeholder: "Ex.: Frasco PET 500ml", required: true },
+    { label: "Molde e máquina", name: "moldeMaquina", placeholder: "Ex.: M-1024 · INJ-04", required: true },
+    { label: "Quantidade planejada", name: "quantidade", type: "number", placeholder: "Ex.: 25.000", required: true },
+    { label: "Prioridade", name: "prioridade", type: "select", options: ["Normal", "Alta", "Urgente"], required: true },
+    { label: "Entrega prevista", name: "entrega", type: "date", required: true },
+    { label: "Observações da programação", name: "observacoes", type: "textarea", placeholder: "Setup, matéria-prima, embalagem ou instruções especiais..." },
+  ] },
+  "/producao": { title: "Nova ordem de produção", description: "Programe produto, máquina, quantidade e prazo para a operação.", fields: [
+    { label: "Produto", name: "produto", placeholder: "Ex.: Tampa Flip-top 28mm", required: true },
+    { label: "Molde", name: "molde", placeholder: "Código do molde", required: true },
+    { label: "Máquina", name: "maquina", placeholder: "Ex.: INJ-07 · 180T", required: true },
+    { label: "Quantidade planejada", name: "quantidade", type: "number", required: true },
+    { label: "Data de início", name: "inicio", type: "date", required: true },
+    { label: "Notas para a produção", name: "notas", type: "textarea", placeholder: "Resina, pigmento, setup ou instruções..." },
+  ] },
+  "/ordens": { title: "Nova ordem de produção", description: "Crie uma ordem com rastreabilidade de produto, molde e máquina.", fields: [
+    { label: "Produto", name: "produto", placeholder: "Produto a fabricar", required: true },
+    { label: "Código do molde", name: "molde", placeholder: "Ex.: M-1024", required: true },
+    { label: "Quantidade", name: "quantidade", type: "number", required: true },
+    { label: "Prioridade", name: "prioridade", type: "select", options: ["Normal", "Alta", "Urgente"], required: true },
+    { label: "Entrega", name: "entrega", type: "date", required: true },
+    { label: "Observações", name: "observacoes", type: "textarea" },
+  ] },
+  "/usuarios": { title: "Novo usuário", description: "Cadastre a pessoa e selecione o perfil e os módulos que ela poderá acessar.", fields: [
+    { label: "Nome completo", name: "nome", placeholder: "Nome do colaborador", required: true },
+    { label: "E-mail corporativo", name: "email", type: "email", placeholder: "nome@empresa.com.br", required: true },
+    { label: "Número de registro", name: "registro", placeholder: "Ex.: REG-00042", required: true },
+    { label: "Perfil de acesso", name: "perfil", type: "select", options: ["Administrador", "Gestor", "Supervisor", "Colaborador"], required: true },
+    { label: "Módulos liberados", name: "modulos", type: "textarea", placeholder: "Ex.: Produção, RH & ponto, Qualidade...", required: true },
+  ] },
+  "/qualidade": { title: "Novo ticket de qualidade", description: "Registre uma não conformidade, inspeção pendente ou ocorrência rastreável.", fields: [
+    { label: "Tipo de ocorrência", name: "tipo", type: "select", options: ["Não conformidade", "Inspeção pendente", "Reclamação", "Melhoria"], required: true },
+    { label: "Lote ou ordem", name: "loteOrdem", placeholder: "Ex.: RES-2409 / OP-4821", required: true },
+    { label: "Produto", name: "produto", placeholder: "Produto afetado", required: true },
+    { label: "Severidade", name: "severidade", type: "select", options: ["Baixa", "Média", "Alta", "Crítica"], required: true },
+    { label: "Descrição e evidências", name: "descricao", type: "textarea", placeholder: "Descreva o fato, lote, defeito e contenção imediata...", required: true },
+  ] },
+  "/manutencao": { title: "Novo ticket de manutenção", description: "Abra uma solicitação para máquina, molde, periférico ou ativo industrial.", fields: [
+    { label: "Ativo", name: "ativo", placeholder: "Ex.: INJ-07 / Molde M-0871", required: true },
+    { label: "Tipo", name: "tipo", type: "select", options: ["Corretiva", "Preventiva", "Lubrificação", "Ferramentaria"], required: true },
+    { label: "Prioridade", name: "prioridade", type: "select", options: ["Programada", "Alta", "Parada imediata"], required: true },
+    { label: "Descrição do problema", name: "descricao", type: "textarea", placeholder: "Sintoma, risco, ruído, desgaste ou serviço necessário...", required: true },
+  ] },
+  "/rh": { title: "Novo colaborador", description: "Cadastre os dados essenciais para iniciar o vínculo, jornada e acessos da pessoa.", fields: [
+    { label: "Nome completo", name: "nome", placeholder: "Nome do colaborador", required: true },
+    { label: "Número de registro", name: "registro", placeholder: "Ex.: REG-00042", required: true },
+    { label: "Cargo", name: "cargo", placeholder: "Ex.: Operador de produção", required: true },
+    { label: "Setor", name: "setor", type: "select", options: ["Produção", "Qualidade", "Manutenção", "Administrativo"], required: true },
+    { label: "Jornada", name: "jornada", placeholder: "Ex.: 06:00 às 14:00", required: true },
+  ] },
+  "/moldes": { title: "Novo molde", description: "Cadastre o ativo de ferramentaria e mantenha cavidades e ciclos rastreáveis.", fields: [
+    { label: "Código do molde", name: "codigo", placeholder: "Ex.: M-1205", required: true },
+    { label: "Descrição", name: "descricao", placeholder: "Produto e aplicação", required: true },
+    { label: "Cavidades", name: "cavidades", type: "number", required: true },
+    { label: "Máquina compatível", name: "maquina", placeholder: "Ex.: INJ-04 · 320T", required: true },
+    { label: "Observações", name: "observacoes", type: "textarea" },
+  ] },
+  "/materia-prima": { title: "Nova matéria-prima", description: "Registre resina, aditivo ou carga com lote, validade e rastreabilidade.", fields: [
+    { label: "Material", name: "material", placeholder: "Ex.: PET PCR", required: true },
+    { label: "Fornecedor", name: "fornecedor", required: true },
+    { label: "Lote", name: "lote", required: true },
+    { label: "Quantidade", name: "quantidade", type: "number", required: true },
+    { label: "Validade", name: "validade", type: "date", required: true },
+  ] },
+  "/pigmentos": { title: "Novo pigmento ou masterbatch", description: "Cadastre a cor, lote e aplicação para manter o padrão entre lotes.", fields: [
+    { label: "Nome da cor", name: "cor", placeholder: "Ex.: Branco W-04", required: true },
+    { label: "Código do masterbatch", name: "codigo", required: true },
+    { label: "Lote", name: "lote", required: true },
+    { label: "Aplicação", name: "aplicacao", placeholder: "Produto ou linha", required: true },
+    { label: "Observações", name: "observacoes", type: "textarea" },
+  ] },
+  "/financeiro": { title: "Novo lançamento financeiro", description: "Registre uma conta, recebimento ou custo vinculado à operação.", fields: [
+    { label: "Tipo de lançamento", name: "tipo", type: "select", options: ["Conta a pagar", "Conta a receber", "Custo industrial", "Fluxo de caixa"], required: true },
+    { label: "Descrição", name: "descricao", required: true },
+    { label: "Valor", name: "valor", type: "number", required: true },
+    { label: "Vencimento", name: "vencimento", type: "date", required: true },
+  ] },
+};
+
+function NewActionModal({ context, actor, onClose }: { context: NavItem; actor: { name: string; record: string } | null; onClose: () => void }) {
+  const definition = actionDefinitions[context.href] ?? actionDefinitions["/dashboard"];
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="access-modal action-modal" onSubmit={(event) => { event.preventDefault(); toast.success(`${definition.title} salvo`, { description: `Registrado por ${actor?.name ?? "usuário autenticado"} · ${actor?.record ?? "sessão ativa"}.` }); onClose(); }}><button type="button" className="modal-close" onClick={onClose}><X size={18} /></button><div className="access-modal__icon"><Plus size={21} /></div><span className="eyebrow">{context.label}</span><h2>{definition.title}</h2><p>{definition.description}</p><div className="action-fields">{definition.fields.map((field) => <label className="modal-field" key={field.name}><span>{field.label}</span>{field.type === "textarea" ? <textarea name={field.name} placeholder={field.placeholder} required={field.required} rows={3} /> : field.type === "select" ? <select name={field.name} required={field.required} defaultValue=""><option value="" disabled>Selecione...</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input name={field.name} type={field.type ?? "text"} placeholder={field.placeholder} required={field.required} />}</label>)}</div><div className="modal-hint"><ShieldCheck size={14} /> Ação registrada automaticamente para {actor?.name ?? "a sessão autenticada"}.</div><button className="button button--primary modal-submit" type="submit">Salvar {definition.title.toLowerCase()}<ChevronRight size={16} /></button><button type="button" className="modal-cancel" onClick={onClose}>Cancelar</button></form></div>;
+}
+
+function Dashboard({ onNewOrder, isLogged, userName }: { onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   return <>
     <PageHeader current={navItems[0]} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />
     <div className="metrics-grid">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div>
@@ -414,7 +512,7 @@ function Dashboard({ onNewOrder, isLogged, userName }: { onNewOrder: () => void;
   </>;
 }
 
-function ModulePage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+function ModulePage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   const data = moduleData[current.href];
   if (!data) return <SettingsPage current={current} onNewOrder={onNewOrder} isLogged={isLogged} userName={userName} />;
   return <>
@@ -428,11 +526,11 @@ function ModulePage({ current, onNewOrder, isLogged, userName }: { current: NavI
   </>;
 }
 
-function RestrictedPage({ current, onNewOrder, onLogin }: { current: NavItem; onNewOrder: () => void; onLogin: () => void }) {
+function RestrictedPage({ current, onNewOrder, onLogin }: { current: NavItem; onNewOrder: (context?: NavItem) => void; onLogin: () => void }) {
   return <><PageHeader current={current} onNewOrder={onNewOrder} isLogged={false} /><section className="restricted-panel"><div className="restricted-panel__icon"><LockKeyhole size={25} /></div><span className="eyebrow">Módulo protegido</span><h2>Acesso autorizado necessário</h2><p>O conteúdo de <b>{current.label}</b> é reservado para pessoas com permissão neste setor. Faça login para validar seu perfil e manter a rastreabilidade das consultas e ações.</p><button className="button button--primary" onClick={onLogin}><LogIn size={16} /> Entrar para acessar</button><div className="restricted-panel__note"><ShieldCheck size={15} /> Acesso público continua disponível para Dashboard, Produção, Qualidade, Estoque, Manutenção e Ordens.</div></section></>;
 }
 
-function RhPage({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+function RhPage({ onNewOrder, isLogged, userName }: { onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   const people = [
     ["Mariana Costa", "Operadora · Linha 01", "06:58", "No posto", "teal" as Tone],
     ["Rafael Mendes", "Preparador · Linha 02", "07:04", "No posto", "teal" as Tone],
@@ -452,7 +550,7 @@ function RhPage({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; is
   </>;
 }
 
-function UsersAccessPage({ onNewOrder, isLogged, userName }: { onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+function UsersAccessPage({ onNewOrder, isLogged, userName }: { onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   const [role, setRole] = useState("Supervisor de produção");
   const [selectedModules, setSelectedModules] = useState(["Produção", "Qualidade", "Estoque"]);
   const modules = ["Dashboard", "Produção", "Qualidade", "Estoque", "Manutenção", "RH & ponto", "Financeiro", "Fiscal e contábil", "Documentos"];
@@ -464,7 +562,7 @@ function UsersAccessPage({ onNewOrder, isLogged, userName }: { onNewOrder: () =>
   </>;
 }
 
-function ProfilePage({ onNewOrder, userName, userRecord }: { onNewOrder: () => void; userName?: string; userRecord?: string }) {
+function ProfilePage({ onNewOrder, userName, userRecord }: { onNewOrder: (context?: NavItem) => void; userName?: string; userRecord?: string }) {
   const displayName = userName ?? "Colaborador autenticado";
   const displayRecord = userRecord ?? "REG-00000";
   return <>
@@ -475,7 +573,7 @@ function ProfilePage({ onNewOrder, userName, userRecord }: { onNewOrder: () => v
   </>;
 }
 
-function SettingsPage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: () => void; isLogged: boolean; userName?: string }) {
+function SettingsPage({ current, onNewOrder, isLogged, userName }: { current: NavItem; onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
   const cards = [
     { title: "Dados mestres", description: "Produtos, moldes, injetoras, clientes e fornecedores.", icon: DatabaseIcon, tone: "teal" as Tone, action: "Gerenciar cadastros" },
     { title: "Usuários e permissões", description: "Papéis, acessos por módulo e trilha de auditoria.", icon: UserRound, tone: "blue" as Tone, action: "Ver usuários" },
@@ -537,12 +635,14 @@ export default function Home() {
   const [isLogged, setIsLogged] = useState(false);
   const [user, setUser] = useState<{ name: string; record: string; role: "admin" | "collaborator" } | null>(null);
   const [accessModal, setAccessModal] = useState<"login" | "record" | null>(null);
+  const [actionContext, setActionContext] = useState<NavItem | null>(null);
   const isErpEntry = location === "/erp";
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
 
   const handleNewOrder = () => {
     if (isLogged && user) {
       toast.success("Ação autorizada", { description: `Registrada por ${user.name} · ${user.record}.` });
+      setActionContext(user ? navItems.find((item) => item.href === location) ?? navItems[0] : null);
       return;
     }
     setAccessModal("record");
@@ -560,7 +660,8 @@ export default function Home() {
   if (location === "/trabalhe-conosco") return <CareersPage />;
   if (institutionalPages[location]) return <InstitutionalPage path={location} />;
   const isProtectedErpRoute = navItems.some((item) => item.href === location);
-  if ((isErpEntry || isProtectedErpRoute) && !isLogged) return <><ErpEntryPage onLogin={() => setAccessModal("login")} />{accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}</>;
+  if ((isErpEntry || isProtectedErpRoute) && !isLogged) return <><ErpEntryPage onLogin={() => setAccessModal("login")} />{accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
+    {actionContext && <NewActionModal context={actionContext} actor={user} onClose={() => setActionContext(null)} />}</>;
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? "sidebar--open" : ""}`}>
@@ -576,6 +677,7 @@ export default function Home() {
       <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b></span></footer>
     </main>
     {accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
+    {actionContext && <NewActionModal context={actionContext} actor={user} onClose={() => setActionContext(null)} />}
   </div>;
 }
 
