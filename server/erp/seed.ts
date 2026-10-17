@@ -4,7 +4,7 @@ import type { SessionUser, UserData } from "./types";
 import { USERS } from "./auth";
 import { generatePassword } from "./password";
 import { createRecord, createMovement } from "./records";
-import { registrarPonto } from "./rh";
+import { registrarPontoDemonstracao } from "./ponto-demonstracao";
 import { createUser, migrateUsernames } from "./users";
 import { AUTOR_INICIALIZACAO } from "./audit";
 import { PASSWORD_MIN_LENGTH } from "@shared/erp/account";
@@ -27,6 +27,8 @@ export const DEMO_USERS = [
  * - E-mail: INJETAFLOW_ADMIN_EMAIL (padrão admin@wamovale.local)
  * - Senha: INJETAFLOW_ADMIN_PASSWORD; se ausente, é gerada e mostrada apenas
  *   no console local, uma única vez. Nunca é gravada em arquivo.
+ * - Marcações de ponto de demonstração (P7-07): origem "Demonstração", nunca em produção por padrão
+ *   (ver `deveSemearPontoDemo`).
  * - Demonstração: INJETAFLOW_SEED_DEMO=false desliga. Junto com os dados de exemplo são criados
  *   usuários demo (DEMO_USERS) com a senha INJETAFLOW_DEMO_PASSWORD ou uma senha gerada e
  *   mostrada só no console.
@@ -87,7 +89,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
       const actor: SessionUser = admin ?? {
         id: "seed", empresaId, nome: "Carga de demonstração", email: "", setor: "Administrativo", perfil: "Administrador", matricula: "DEMO", permissoes: {}, status: "Ativo",
       };
-      await seedDemo(repo, { ...actor, nome: "Carga de demonstração" });
+      await seedDemo(repo, { ...actor, nome: "Carga de demonstração" }, { ponto: deveSemearPontoDemo(env) });
       if (result.adminCreated) {
         const fromEnvDemo = env.INJETAFLOW_DEMO_PASSWORD;
         if (fromEnvDemo && fromEnvDemo.length < PASSWORD_MIN_LENGTH) throw new Error(`INJETAFLOW_DEMO_PASSWORD precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
@@ -124,7 +126,7 @@ function inDays(days: number) {
 }
 
 /** Dados fictícios para demonstração. Nada aqui representa cliente, pessoa ou valor real. */
-export async function seedDemo(repo: DataRepository, actor: SessionUser) {
+export async function seedDemo(repo: DataRepository, actor: SessionUser, opts: { ponto?: boolean; now?: Date } = {}) {
   const c = (module: Parameters<typeof createRecord>[2], data: Record<string, unknown>) => createRecord(repo, actor, module, data, demo);
 
   await c("moldes", { codigo: "M-0001", descricao: "Tampa flip-top 28mm (demo)", produto: "Tampa flip-top 28mm", cavidades: 16, cavidadesAtivas: 16, ciclos: 120000, maquina: "INJ-07 · 180T", ultimaManutencao: inDays(-12), proximaAcao: "Lubrificação", status: "Em uso" });
@@ -172,13 +174,48 @@ export async function seedDemo(repo: DataRepository, actor: SessionUser) {
 
   await c("regras", { nome: "Alerta de estoque mínimo", modulo: "Estoque", condicao: "Saldo abaixo do estoque mínimo", responsavel: "Supervisor de estoque", status: "Ativa", detalhamento: "Regra de demonstração." });
 
-  const base = new Date();
-  base.setHours(6, 0, 0, 0);
-  const at = (hours: number, minutes = 0) => new Date(base.getTime() + (hours * 60 + minutes) * 60000);
-  if (at(0) <= new Date()) {
-    await registrarPonto(repo, actor, { matricula: "MAT-0001", tipo: "Entrada", origem: "Rede local", now: at(0, -2), demo: true });
-    await registrarPonto(repo, actor, { matricula: "MAT-0002", tipo: "Entrada", origem: "GPS", now: at(0, 4), demo: true });
-    if (at(5) <= new Date()) await registrarPonto(repo, actor, { matricula: "MAT-0002", tipo: "Início de intervalo", origem: "GPS", now: at(5), demo: true });
-    if (at(2) <= new Date()) await registrarPonto(repo, actor, { matricula: "MAT-0004", tipo: "Entrada", origem: "Manual", now: at(2, 12), observacao: "Registro manual de demonstração", demo: true });
-  }
+  if (opts.ponto) await seedPontoDemo(repo, actor, opts.now ?? new Date());
+}
+
+/**
+ * P7-07 (aceite R1) e P7-R2-03 (aceite R2): o ERP não grava ponto (F0c, a origem oficial é o relógio REP).
+ * As marcações de demonstração só são semeadas com `NODE_ENV=development` ou `test` (o `pnpm dev` define
+ * development; o vitest, test), ou com `INJETAFLOW_SEED_DEMO_PONTO=1` explícito (usado pelo E2E, que roda o build
+ * de produção). `NODE_ENV` ausente ou `production` não semeia. `INJETAFLOW_SEED_DEMO_PONTO=0` desliga sempre.
+ */
+export function deveSemearPontoDemo(env: NodeJS.ProcessEnv): boolean {
+  const flag = (env.INJETAFLOW_SEED_DEMO_PONTO ?? "").trim().toLowerCase();
+  if (flag === "1" || flag === "true") return true;
+  if (flag === "0" || flag === "false") return false;
+  return env.NODE_ENV === "development" || env.NODE_ENV === "test";
+}
+
+/**
+ * P7-04: marcações de demonstração em horários FIXOS do dia anterior (sempre no passado, então existem
+ * a qualquer hora em que o seed rode), incluindo uma fora de sequência (DIVERGENTE). As de hoje entram
+ * só se o horário já passou, para a tela de presença ter exemplo durante o expediente.
+ */
+export async function seedPontoDemo(repo: DataRepository, actor: SessionUser, now: Date) {
+  const ontem = new Date(now);
+  ontem.setDate(ontem.getDate() - 1);
+  const em = (dia: Date, hh: number, mm: number) => {
+    const d = new Date(dia);
+    d.setHours(hh, mm, 0, 0);
+    return d;
+  };
+  const p = (matricula: string, tipo: Parameters<typeof registrarPontoDemonstracao>[2]["tipo"], quando: Date) =>
+    registrarPontoDemonstracao(repo, actor, { matricula, tipo, now: quando, demo: true });
+  await p("MAT-0001", "Entrada", em(ontem, 5, 58));
+  await p("MAT-0001", "Início de intervalo", em(ontem, 10, 0));
+  await p("MAT-0001", "Fim de intervalo", em(ontem, 11, 0));
+  await p("MAT-0001", "Saída", em(ontem, 14, 2));
+  await p("MAT-0002", "Entrada", em(ontem, 6, 4));
+  await p("MAT-0002", "Saída", em(ontem, 14, 0));
+  await p("MAT-0002", "Saída", em(ontem, 14, 5)); // fora de sequência: gravada como DIVERGENTE, nunca recusada
+  await p("MAT-0004", "Entrada", em(ontem, 8, 12));
+  await p("MAT-0004", "Saída", em(ontem, 17, 3));
+  const hoje = (hh: number, mm: number) => em(now, hh, mm);
+  if (hoje(5, 58) <= now) await p("MAT-0001", "Entrada", hoje(5, 58));
+  if (hoje(6, 4) <= now) await p("MAT-0002", "Entrada", hoje(6, 4));
+  if (hoje(11, 0) <= now) await p("MAT-0002", "Início de intervalo", hoje(11, 0));
 }

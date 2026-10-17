@@ -10,8 +10,9 @@ import {
 } from "./auth";
 import { verifyPassword } from "./password";
 import { actorOf, audit, type AuditEntry } from "./audit";
-import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, summarize, updateRecord, type RecordData } from "./records";
-import { historico, ORIGENS_PONTO, presenca, registrarPonto, relatorio, relatorioCsv, TIPOS_PONTO } from "./rh";
+import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, PONTO_IMUTAVEL, PONTO_SO_NO_RELOGIO, summarize, updateRecord, type RecordData } from "./records";
+import { historico, presenca, relatorio, relatorioCsv } from "./rh";
+import { auditarNegacaoPonto, type RotaNegadaPonto } from "./ponto-negacoes";
 import { dashboardSummary } from "./dashboard";
 import { createUser, deleteUser, listUsers, updateOwnAccount, updateUser, userCreateSchema, userUpdateSchema } from "./users";
 import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
@@ -101,6 +102,20 @@ export const authRouter = router({
     }),
 });
 
+/**
+ * P7-01/P7-03/P7-08: registra a tentativa (com deduplicação por usuário+rota, P7-02) e responde FORBIDDEN.
+ * Em update/remove a matrícula-alvo vem da própria marcação, quando existe.
+ */
+async function negarPonto(ctx: { repo: DataRepository; user: SessionUser }, input: { rota: RotaNegadaPonto; alvo?: unknown; tipo?: unknown; registroId?: string }, message: string): Promise<never> {
+  let { alvo, tipo } = input;
+  if (input.registroId && alvo === undefined) {
+    const marcacao = await ctx.repo.get<RecordData>("ponto", ctx.user.empresaId, input.registroId.slice(0, 80));
+    if (marcacao) ({ matricula: alvo, tipo } = marcacao.data);
+  }
+  await auditarNegacaoPonto(ctx.repo, ctx.user, { rota: input.rota, alvo, tipo, registroId: input.registroId?.slice(0, 80) });
+  throw new TRPCError({ code: "FORBIDDEN", message });
+}
+
 export const recordsRouter = router({
   list: protectedProcedure.input(listInput).query(async ({ ctx, input }) => {
     assertPermission(ctx.user, permOf(input.module), "ver");
@@ -126,14 +141,19 @@ export const recordsRouter = router({
     return summarize(ctx.repo, ctx.user.empresaId, module, query);
   }),
   create: protectedProcedure.input(z.object({ module: moduleKey, data: z.record(z.string(), z.unknown()) })).mutation(async ({ ctx, input }) => {
+    // P7-01: negação no ponto é auditada antes da checagem de permissão (vale também para quem não tem rh:editar)
+    if (input.module === "ponto") await negarPonto(ctx, { rota: "records.create", alvo: input.data.matricula, tipo: input.data.tipo }, PONTO_SO_NO_RELOGIO);
     assertPermission(ctx.user, permOf(input.module), "editar");
     return createRecord(ctx.repo, ctx.user, input.module, input.data);
   }),
   update: protectedProcedure.input(z.object({ module: moduleKey, id: z.string().min(1), data: z.record(z.string(), z.unknown()) })).mutation(async ({ ctx, input }) => {
+    // P7-08: tentativa de alterar marcação também fica na trilha (marcação é imutável, N11)
+    if (input.module === "ponto") await negarPonto(ctx, { rota: "records.update", registroId: input.id }, PONTO_IMUTAVEL);
     assertPermission(ctx.user, permOf(input.module), "editar");
     return updateRecord(ctx.repo, ctx.user, input.module, input.id, input.data);
   }),
   remove: protectedProcedure.input(z.object({ module: moduleKey, id: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    if (input.module === "ponto") await negarPonto(ctx, { rota: "records.remove", registroId: input.id }, PONTO_IMUTAVEL);
     assertPermission(ctx.user, permOf(input.module), "editar");
     return deleteRecord(ctx.repo, ctx.user, input.module, input.id);
   }),
@@ -197,12 +217,13 @@ export const usuariosRouter = router({
   }),
 });
 
-const pontoInput = z.object({ matricula: z.string().trim().min(1, "Informe a matrícula").max(40), tipo: z.enum(TIPOS_PONTO), origem: z.enum(ORIGENS_PONTO), observacao: z.string().max(500).optional() });
 const relatorioInput = z.object({ inicio: dateStr, fim: dateStr, matricula: z.string().max(40).optional() });
 
 export const rhRouter = router({
   presenca: moduleProcedure("rh", "ver").input(z.object({ date: dateStr.optional() }).optional()).query(({ ctx, input }) => presenca(ctx.repo, ctx.user.empresaId, input?.date ?? todayIso())),
-  registrarPonto: moduleProcedure("rh", "editar").input(pontoInput).mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, input)),
+  // F0a/F0c (planos RH/Ponto v2 §2.2-c e v3 §7) + P7-02/P7-05 do aceite: a antiga rota `rh.registrarPonto` foi
+  // REMOVIDA. O ERP não registra ponto (só o relógio oficial, o REP). Quem chamar recebe 403 com orientação
+  // (errorFormatter em server/_core/trpc.ts), sem gravar nada.
   relatorio: moduleProcedure("rh", "ver").input(relatorioInput).query(({ ctx, input }) => relatorio(ctx.repo, ctx.user.empresaId, input)),
   relatorioCsv: moduleProcedure("rh", "ver").input(relatorioInput).mutation(({ ctx, input }) => relatorioCsv(ctx.repo, ctx.user.empresaId, input)),
   historico: moduleProcedure("rh", "ver").input(z.object({ matricula: z.string().min(1).max(40) })).query(({ ctx, input }) => historico(ctx.repo, ctx.user.empresaId, input.matricula)),
@@ -251,9 +272,7 @@ export const perfilRouter = router({
   atualizarConta: protectedProcedure
     .input(z.record(z.string(), z.unknown(), { error: "Informe o nome de usuário." }))
     .mutation(({ ctx, input }) => updateOwnAccount(ctx.repo, ctx.user, input)),
-  registrarPonto: protectedProcedure
-    .input(pontoInput.omit({ matricula: true }))
-    .mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, { ...input, matricula: ctx.user.matricula })),
+  // F0c (plano RH/Ponto v3 §7) + P7-02: `perfil.registrarPonto` também foi REMOVIDA (ver ROTAS_PONTO_REMOVIDAS).
   novaOcorrencia: protectedProcedure
     .input(ocorrenciaInput)
     .mutation(async ({ ctx, input }) => {
