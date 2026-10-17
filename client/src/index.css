@@ -452,3 +452,13 @@ tbody td { height: 53px; padding: 8px 10px; border-top: 1px solid #f0f2f4; color
   .institutional-intro h1 { font-size: clamp(38px, 12vw, 52px); }
   .institutional-intro > p { font-size: 14px; }
 }
+
+/* Cabeçalho público unificado: a troca de rota não desloca logo, menu ou CTA. */
+.public-form-header { max-width: 1240px; padding: 24px 34px; gap: 28px; }
+.public-form-header img { width: 122px; height: 57px; }
+.public-form-header .institutional-nav { gap: 24px; }
+.public-form-header .portal-login-link { height: 38px; padding-inline: 14px; font-size: 11px; }
+@media (max-width: 800px) {
+  .public-form-header { padding: 17px 18px; }
+  .public-form-header img { width: 116px; height: 50px; }
+}
