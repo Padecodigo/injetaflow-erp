@@ -275,9 +275,10 @@ export async function createRecord(repo: DataRepository, user: SessionUser, modu
 
 export async function updateRecord(repo: DataRepository, user: SessionUser, moduleKey: ModuleKey, id: string, input: unknown) {
   const mod = MODULES[moduleKey];
-  if (moduleKey === "movimentacoes" || moduleKey === "ponto") {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Movimentações e batidas de ponto não podem ser editadas; registre um ajuste." });
+  if (moduleKey === "ponto") {
+    throw new TRPCError({ code: "FORBIDDEN", message: PONTO_IMUTAVEL });
   }
+  if (moduleKey === "movimentacoes") return updateMovement(repo, user, id, input);
   const existing = await repo.get<RecordData>(moduleKey, user.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
   const data = validateInput(mod, input, "update");
@@ -293,6 +294,8 @@ export async function deleteRecord(repo: DataRepository, user: SessionUser, modu
   const mod = MODULES[moduleKey];
   const existing = await repo.get<RecordData>(moduleKey, user.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+  if (moduleKey === "ponto") throw new TRPCError({ code: "FORBIDDEN", message: PONTO_IMUTAVEL });
+  if (moduleKey === "movimentacoes") return deleteMovement(repo, user, existing);
   await repo.softDelete(moduleKey, user.empresaId, id, actorOf(user));
   await audit(repo, user.empresaId, user, { acao: "excluir", modulo: moduleKey, registroId: id, resumo: `${mod.singular} ${describe(mod, existing.data)}` });
   return { success: true as const };
@@ -303,6 +306,45 @@ function describe(mod: ModuleDef, data: RecordData): string {
   return String(data[key] ?? data.nome ?? "").trim();
 }
 
+/** N11: marcação de ponto não se apaga nem se edita (Portaria 671/MTE). */
+export const PONTO_IMUTAVEL = "Marcações de ponto não podem ser editadas nem excluídas (Portaria 671/MTE). Registre uma ocorrência de ajuste para o RH analisar.";
+
+/** Teto de saldo de estoque (N03). */
+export const MAX_SALDO = 1_000_000_000;
+
+type StoredMovement = StoredRecord<RecordData>;
+
+/** Efeito que a movimentação teve no saldo (positivo = aumentou). */
+function movementEffect(mov: RecordData): number {
+  return (Number(mov.saldoNovo) || 0) - (Number(mov.saldoAnterior) || 0);
+}
+
+function computeSaldo(tipo: unknown, saldoAtual: number, quantidade: number): number {
+  return tipo === "Entrada" ? saldoAtual + quantidade : tipo === "Saída" ? saldoAtual - quantidade : quantidade;
+}
+
+function assertSaldo(saldo: number, item: StoredRecord<RecordData>, contexto: string) {
+  const unidade = String(item.data.unidade ?? "");
+  if (saldo < 0) throw new TRPCError({ code: "BAD_REQUEST", message: `${contexto}: o saldo de ${String(item.data.codigo)} ficaria negativo (${formatQty(saldo)} ${unidade}).` });
+  if (saldo > MAX_SALDO) throw new TRPCError({ code: "BAD_REQUEST", message: `${contexto}: o saldo de ${String(item.data.codigo)} passaria do máximo permitido (${formatQty(MAX_SALDO)}).` });
+}
+
+function formatQty(n: number): string {
+  return n.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+
+function roundQty(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+async function setItemSaldo(repo: DataRepository, user: SessionUser, item: StoredRecord<RecordData>, saldoNovo: number) {
+  const minimo = Number(item.data.estoqueMinimo ?? 0) || 0;
+  const patch: RecordData = { saldo: saldoNovo };
+  if (item.data.status === "Normal" && minimo > 0 && saldoNovo < minimo) patch.status = "Reposição";
+  if (item.data.status === "Reposição" && saldoNovo >= minimo) patch.status = "Normal";
+  await repo.update("estoque", user.empresaId, item.id, patch, actorOf(user));
+}
+
 /** Entrada/saída/ajuste de estoque: grava a movimentação e altera o saldo do item. */
 export async function createMovement(repo: DataRepository, user: SessionUser, input: unknown, opts: { demo?: boolean } = {}) {
   const mod = MODULES.movimentacoes;
@@ -311,16 +353,65 @@ export async function createMovement(repo: DataRepository, user: SessionUser, in
   if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: `Item "${String(data.item)}" não encontrado no estoque.` });
   const saldoAnterior = Number(item.data.saldo ?? 0) || 0;
   const quantidade = Number(data.quantidade);
-  const saldoNovo = data.tipo === "Entrada" ? saldoAnterior + quantidade : data.tipo === "Saída" ? saldoAnterior - quantidade : quantidade;
+  const saldoNovo = roundQty(computeSaldo(data.tipo, saldoAnterior, quantidade));
   if (saldoNovo < 0) throw new TRPCError({ code: "BAD_REQUEST", message: `Saldo insuficiente: disponível ${saldoAnterior} ${String(item.data.unidade ?? "")}.` });
-  const minimo = Number(item.data.estoqueMinimo ?? 0) || 0;
-  const patch: RecordData = { saldo: saldoNovo };
-  if (item.data.status === "Normal" && minimo > 0 && saldoNovo < minimo) patch.status = "Reposição";
-  if (item.data.status === "Reposição" && saldoNovo >= minimo) patch.status = "Normal";
-  await repo.update("estoque", user.empresaId, item.id, patch, actorOf(user));
+  assertSaldo(saldoNovo, item, "Movimentação recusada");
+  await setItemSaldo(repo, user, item, saldoNovo);
   const record = await repo.insert<RecordData>("movimentacoes", user.empresaId, { ...data, item: item.data.codigo, saldoAnterior, saldoNovo }, { actor: actorOf(user), demo: opts.demo });
   await audit(repo, user.empresaId, user, { acao: "movimentar", modulo: "estoque", registroId: item.id, resumo: `${String(data.tipo)} de ${quantidade} em ${String(item.data.codigo)} (${saldoAnterior} → ${saldoNovo})` });
   return flatten(record);
+}
+
+/** N02: excluir uma movimentação estorna o efeito dela no saldo (com auditoria). */
+async function deleteMovement(repo: DataRepository, user: SessionUser, mov: StoredMovement) {
+  const item = await findOneBy(repo, user.empresaId, "estoque", "codigo", mov.data.item);
+  let resumoSaldo = "item não encontrado, saldo não alterado";
+  if (item) {
+    const atual = Number(item.data.saldo ?? 0) || 0;
+    const estornado = roundQty(atual - movementEffect(mov.data));
+    assertSaldo(estornado, item, "Não é possível excluir esta movimentação");
+    await setItemSaldo(repo, user, item, estornado);
+    resumoSaldo = `saldo de ${String(item.data.codigo)} ${atual} → ${estornado}`;
+  }
+  await repo.softDelete("movimentacoes", user.empresaId, mov.id, actorOf(user));
+  await audit(repo, user.empresaId, user, { acao: "excluir", modulo: "movimentacoes", registroId: mov.id, resumo: `Estorno de ${String(mov.data.tipo)} de ${String(mov.data.quantidade)} em ${String(mov.data.item)} (${resumoSaldo})` });
+  return { success: true as const };
+}
+
+/** N02: editar uma movimentação desfaz o efeito antigo e aplica o novo, validando o saldo. */
+async function updateMovement(repo: DataRepository, user: SessionUser, id: string, input: unknown) {
+  const mod = MODULES.movimentacoes;
+  const mov = await repo.get<RecordData>("movimentacoes", user.empresaId, id);
+  if (!mov) throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+  const patch = validateInput(mod, input, "update");
+  const next = { ...mov.data, ...patch };
+  const affectsStock = ["item", "tipo", "quantidade"].some(key => key in patch && String(patch[key]) !== String(mov.data[key]));
+  if (!affectsStock) {
+    await repo.update<RecordData>("movimentacoes", user.empresaId, id, patch, actorOf(user));
+    await audit(repo, user.empresaId, user, { acao: "editar", modulo: "movimentacoes", registroId: id, resumo: `Movimentação de ${String(mov.data.item)} (dados sem efeito no saldo)` });
+    return getRecord(repo, user.empresaId, "movimentacoes", id);
+  }
+  const oldItem = await findOneBy(repo, user.empresaId, "estoque", "codigo", mov.data.item);
+  const newItem = String(next.item) === String(mov.data.item) ? oldItem : await findOneBy(repo, user.empresaId, "estoque", "codigo", next.item);
+  if (!newItem) throw new TRPCError({ code: "BAD_REQUEST", message: `Item "${String(next.item)}" não encontrado no estoque.` });
+  // 1) desfaz o efeito antigo
+  let oldSaldoDepoisEstorno: number | null = null;
+  if (oldItem) {
+    oldSaldoDepoisEstorno = roundQty((Number(oldItem.data.saldo ?? 0) || 0) - movementEffect(mov.data));
+    assertSaldo(oldSaldoDepoisEstorno, oldItem, "Não é possível alterar esta movimentação");
+  }
+  // 2) aplica o novo efeito
+  const base = oldItem && newItem.id === oldItem.id ? oldSaldoDepoisEstorno! : Number(newItem.data.saldo ?? 0) || 0;
+  const saldoNovo = roundQty(computeSaldo(next.tipo, base, Number(next.quantidade)));
+  assertSaldo(saldoNovo, newItem, "Alteração recusada");
+  if (oldItem && oldItem.id !== newItem.id) await setItemSaldo(repo, user, oldItem, oldSaldoDepoisEstorno!);
+  await setItemSaldo(repo, user, newItem, saldoNovo);
+  await repo.update<RecordData>("movimentacoes", user.empresaId, id, { ...patch, item: newItem.data.codigo, saldoAnterior: base, saldoNovo }, actorOf(user));
+  await audit(repo, user.empresaId, user, {
+    acao: "editar", modulo: "movimentacoes", registroId: id,
+    resumo: `Movimentação recalculada: ${String(mov.data.tipo)} ${String(mov.data.quantidade)} → ${String(next.tipo)} ${String(next.quantidade)} em ${String(newItem.data.codigo)} (saldo ${base} → ${saldoNovo})`,
+  });
+  return getRecord(repo, user.empresaId, "movimentacoes", id);
 }
 
 /** Consumo de matéria-prima: baixa a quantidade do lote. */

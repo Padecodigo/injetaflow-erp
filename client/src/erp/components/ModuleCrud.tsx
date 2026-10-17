@@ -141,11 +141,13 @@ export function ModuleCrud({
 
   const rows = (list.data?.items ?? []) as RecordRow[];
   const rowLabel = (row: RecordRow) => String(row[mod.autoCode?.field ?? mod.columns[0]] ?? row.id);
+  const immutable = mod.key === "ponto";
   const actionsFor = (row: RecordRow): MenuAction[] => [
     { label: "Ver detalhes", onSelect: () => setViewing(row), icon: <Eye size={14} /> },
-    ...(canEdit && mod.key !== "movimentacoes" && mod.key !== "ponto" ? [{ label: "Editar", onSelect: () => setEditing(row), icon: <Pencil size={14} /> }] : []),
+    ...(canEdit && !immutable ? [{ label: "Editar", onSelect: () => setEditing(row), icon: <Pencil size={14} /> }] : []),
     ...(extraActions?.(row) ?? []),
-    ...(canEdit ? [{ label: "Excluir", onSelect: () => setDeleting(row), danger: true, icon: <Trash2 size={14} /> }] : []),
+    // N11: marcação de ponto não pode ser excluída (Portaria 671); o ajuste é por ocorrência
+    ...(canEdit && !immutable ? [{ label: "Excluir", onSelect: () => setDeleting(row), danger: true, icon: <Trash2 size={14} /> }] : []),
   ];
 
   const cell = (column: string, row: RecordRow, index: number) => {
@@ -216,7 +218,7 @@ export function ModuleCrud({
               <tr><td colSpan={mod.columns.length + 1}><EmptyState>{activeFilters ? <>Nenhum registro com esses filtros. <button type="button" className="text-button" onClick={clearFilters}>Limpar filtros</button></> : <>Nenhum registro ainda.{canCreate ? <> <button type="button" className="text-button" onClick={startCreate}>{createLabel ?? mod.createLabel}</button></> : null}</>}</EmptyState></td></tr>
             ) : (
               rows.map(row => (
-                <tr key={row.id} data-testid="record-row" onDoubleClick={() => (canEdit && mod.key !== "movimentacoes" && mod.key !== "ponto" ? setEditing(row) : setViewing(row))} title="Duplo clique para abrir">
+                <tr key={row.id} data-testid="record-row" onDoubleClick={() => (canEdit && !immutable ? setEditing(row) : setViewing(row))} title="Duplo clique para abrir">
                   {mod.columns.map((column, index) => <td key={column} className={index === 0 ? "module-primary" : ""}>{cell(column, row, index)}</td>)}
                   <td><RowMenu label={rowLabel(row)} actions={actionsFor(row)} /></td>
                 </tr>
@@ -239,7 +241,7 @@ export function ModuleCrud({
       {viewing && <RecordDetails mod={mod} row={viewing} onClose={() => setViewing(null)} />}
       {deleting && (
         <ConfirmModal danger title="Excluir registro?" confirmLabel="Excluir" busy={remove.isPending} onClose={() => setDeleting(null)} onConfirm={doDelete}
-          message={<>O registro <b>{rowLabel(deleting)}</b> sairá das listas de {mod.label}. A exclusão é lógica: o histórico fica guardado para auditoria.</>} />
+          message={<>O registro <b>{rowLabel(deleting)}</b> sairá das listas de {mod.label}.{mod.key === "movimentacoes" ? <> O efeito no saldo do item será <b>estornado</b>.</> : null} A exclusão é lógica: o histórico fica guardado para auditoria.</>} />
       )}
     </>
   );
