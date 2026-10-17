@@ -5,7 +5,7 @@ import { assertPermission, moduleProcedure, protectedProcedure, publicProcedure,
 import type { TrpcContext } from "../_core/context";
 import {
   authenticate, clearLoginFailures, clearSessionCookie, createSession, destroySession, destroyUserSessions, hashUserPassword,
-  isLoginLocked, registerLoginFailure, setSessionCookie, toSessionUser, USERS,
+  isLoginLocked, MAX_FAILURES_PER_EMAIL, registerLoginFailure, setSessionCookie, toSessionUser, USERS,
 } from "./auth";
 import { verifyPassword } from "./password";
 import { actorOf, audit, type AuditEntry } from "./audit";
@@ -15,6 +15,7 @@ import { dashboardSummary } from "./dashboard";
 import { createUser, deleteUser, listUsers, updateUser, userCreateSchema, userUpdateSchema } from "./users";
 import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
 import { publicEmpresaId } from "./store";
+import { clientIp } from "./net";
 import type { UserData } from "./types";
 import { normalizeText, todayIso } from "./text";
 
@@ -33,10 +34,8 @@ const listInput = z.object({
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
-function clientIp(ctx: TrpcContext): string {
-  const forwarded = ctx.req.headers?.["x-forwarded-for"];
-  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (first?.split(",")[0].trim() || ctx.req.socket?.remoteAddress || ctx.req.ip || "local").toString();
+function ipOf(ctx: TrpcContext): string {
+  return clientIp(ctx.req);
 }
 
 const permOf = (key: ModuleKey) => MODULES[key].permission;
@@ -46,15 +45,24 @@ export const authRouter = router({
   login: publicProcedure
     .input(z.object({ email: z.string().trim().min(1, "Informe o e-mail").max(200), password: z.string().min(1, "Informe a senha").max(200) }))
     .mutation(async ({ ctx, input }) => {
-      const key = `${clientIp(ctx)}|${input.email.toLowerCase()}`;
-      if (isLoginLocked(key)) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde 15 minutos ou fale com o administrador." });
-      const user = await authenticate(ctx.repo, input.email, input.password);
+      const email = input.email.trim().toLowerCase();
+      const key = `${ipOf(ctx)}|${email}`;
+      const emailKey = `email|${email}`;
+      if (isLoginLocked(key) || isLoginLocked(emailKey, Date.now(), MAX_FAILURES_PER_EMAIL)) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde 15 minutos ou fale com o administrador." });
+      }
+      const user = await authenticate(ctx.repo, email, input.password);
+      if (user === "inativo") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Usuário inativo. Fale com o administrador para reativar o acesso." });
+      }
       if (!user) {
         registerLoginFailure(key);
+        registerLoginFailure(emailKey);
         throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
       }
       clearLoginFailures(key);
-      const { token, expiresAt } = await createSession(ctx.repo, user, clientIp(ctx));
+      clearLoginFailures(emailKey);
+      const { token, expiresAt } = await createSession(ctx.repo, user, ipOf(ctx));
       setSessionCookie(ctx.req, ctx.res, token, expiresAt);
       const fresh = await ctx.repo.get<UserData>(USERS, user.empresaId, user.id);
       const sessionUser = toSessionUser(fresh ?? user);
@@ -228,7 +236,7 @@ export const configRouter = router({
 
 export const publicoRouter = router({
   enviarSolicitacao: publicProcedure.input(solicitacaoSchema).mutation(async ({ ctx, input }) => {
-    checkPublicRate(clientIp(ctx));
+    checkPublicRate(ipOf(ctx));
     return enviarSolicitacao(ctx.repo, publicEmpresaId(), input);
   }),
 });

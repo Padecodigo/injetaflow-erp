@@ -41,11 +41,13 @@ export function isValidPerfil(perfil: string): boolean {
 const failures = new Map<string, number[]>();
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
+/** N01: limite por e-mail, independente do IP (impede força bruta distribuída). */
+export const MAX_FAILURES_PER_EMAIL = 10;
 
-export function isLoginLocked(key: string, now = Date.now()): boolean {
+export function isLoginLocked(key: string, now = Date.now(), max = MAX_FAILURES): boolean {
   const recent = (failures.get(key) ?? []).filter(ts => now - ts < WINDOW_MS);
   failures.set(key, recent);
-  return recent.length >= MAX_FAILURES;
+  return recent.length >= max;
 }
 export function registerLoginFailure(key: string, now = Date.now()) {
   failures.set(key, [...(failures.get(key) ?? []).filter(ts => now - ts < WINDOW_MS), now]);
@@ -63,15 +65,18 @@ export async function findUserByEmail(repo: DataRepository, email: string) {
   return repo.findGlobal<UserData>(USERS, data => data.email === normalized);
 }
 
-export async function authenticate(repo: DataRepository, email: string, password: string): Promise<StoredRecord<UserData> | null> {
+/** Retorna o usuário, "inativo" (senha certa, mas usuário desativado — N12) ou null. */
+export async function authenticate(repo: DataRepository, email: string, password: string): Promise<StoredRecord<UserData> | "inativo" | null> {
   const user = await findUserByEmail(repo, email);
   if (!user) {
     // custo equivalente para não revelar se o e-mail existe
     verifyPassword(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==");
     return null;
   }
-  if (user.data.status !== "Ativo") return null;
-  return verifyPassword(password, user.data.senhaHash) ? user : null;
+  const ok = verifyPassword(password, user.data.senhaHash);
+  if (!ok) return null;
+  // só revela o estado "inativo" a quem acertou a senha (não permite enumerar contas)
+  return user.data.status === "Ativo" ? user : "inativo";
 }
 
 export async function createSession(repo: DataRepository, user: StoredRecord<UserData>, ip?: string): Promise<{ token: string; expiresAt: Date }> {
@@ -114,11 +119,9 @@ export function hashUserPassword(password: string) {
 }
 
 // ---------- cookie ----------
+// req.protocol só considera X-Forwarded-Proto quando "trust proxy" está configurado (N01)
 function isHttps(req: Request): boolean {
-  if (req.protocol === "https") return true;
-  const forwarded = req.headers?.["x-forwarded-proto"];
-  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return typeof value === "string" && value.split(",")[0].trim() === "https";
+  return req.protocol === "https";
 }
 
 export function sessionCookieOptions(req: Request): CookieOptions {

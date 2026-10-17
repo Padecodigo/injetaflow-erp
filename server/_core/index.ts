@@ -10,11 +10,13 @@ import { serveStatic, setupVite } from "./vite";
 import { registerErpHttpRoutes } from "../erp/http";
 import { ensureSeed } from "../erp/seed";
 import { getRepository } from "../erp/store";
+import { configureTrustProxy } from "../erp/net";
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
   app.disable("x-powered-by");
+  configureTrustProxy(app);
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");

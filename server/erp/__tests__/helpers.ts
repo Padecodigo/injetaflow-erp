@@ -8,9 +8,17 @@ import { resetPublicRate } from "../publico";
 
 export type CookieJar = { set: Record<string, { value: string; options: Record<string, unknown> }>; cleared: { name: string; options: Record<string, unknown> }[] };
 
-export function fakeHttp(token?: string | null, ip = "10.0.0.1") {
+export function fakeHttp(token?: string | null, ip = "10.0.0.1", extraHeaders: Record<string, string> = {}, trustProxy = false) {
   const jar: CookieJar = { set: {}, cleared: [] };
-  const req = { protocol: "http", headers: token ? { cookie: `${SESSION_COOKIE}=${token}` } : {}, ip, socket: { remoteAddress: ip } } as unknown as TrpcContext["req"];
+  const forwarded = extraHeaders["x-forwarded-for"]?.split(",")[0].trim();
+  const req = {
+    protocol: "http",
+    headers: { ...(token ? { cookie: `${SESSION_COOKIE}=${token}` } : {}), ...extraHeaders },
+    // como o Express: req.ip só usa X-Forwarded-For com trust proxy
+    ip: trustProxy && forwarded ? forwarded : ip,
+    socket: { remoteAddress: ip },
+    app: { get: (key: string) => (key === "trust proxy" ? trustProxy : undefined) },
+  } as unknown as TrpcContext["req"];
   const res = {
     cookie: (name: string, value: string, options: Record<string, unknown>) => { jar.set[name] = { value, options }; },
     clearCookie: (name: string, options: Record<string, unknown>) => { jar.cleared.push({ name, options }); },
@@ -18,8 +26,8 @@ export function fakeHttp(token?: string | null, ip = "10.0.0.1") {
   return { req, res, jar };
 }
 
-export async function callerFor(repo: DataRepository, token?: string | null, ip?: string) {
-  const { req, res, jar } = fakeHttp(token, ip);
+export async function callerFor(repo: DataRepository, token?: string | null, ip?: string, extraHeaders?: Record<string, string>, trustProxy?: boolean) {
+  const { req, res, jar } = fakeHttp(token, ip, extraHeaders, trustProxy);
   const user = await getUserFromToken(repo, token ?? null);
   const ctx: TrpcContext = { req, res, user, repo, sessionToken: token ?? null };
   return { caller: appRouter.createCaller(ctx), jar, ctx };
