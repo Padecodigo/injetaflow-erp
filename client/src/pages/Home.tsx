@@ -340,7 +340,7 @@ function PageHeader({ current, onNewOrder, isLogged, userName }: { current: NavI
       </div>
       <div className="header-actions">
         <button className="button button--secondary"><Download size={16} /> Exportar</button>
-        <button className="button button--primary" onClick={() => onNewOrder(current)}><Plus size={17} /> Nova ordem</button>
+        <button className="button button--primary" onClick={() => onNewOrder(current)}><Plus size={17} /> {{"/usuarios":"Novo usuário","/qualidade":"Novo ticket","/manutencao":"Novo ticket","/rh":"Novo colaborador","/moldes":"Novo molde","/materia-prima":"Nova matéria-prima","/pigmentos":"Novo pigmento","/estoque":"Nova movimentação","/financeiro":"Novo lançamento","/meu-perfil":"Novo apontamento","/configuracoes":"Nova regra"}[current.href] ?? "Nova ordem"}</button>
       </div>
     </div>
   );
@@ -489,6 +489,26 @@ const actionDefinitions: Record<string, ActionDefinition> = {
     { label: "Lote", name: "lote", required: true },
     { label: "Aplicação", name: "aplicacao", placeholder: "Produto ou linha", required: true },
     { label: "Observações", name: "observacoes", type: "textarea" },
+  ] },
+  "/estoque": { title: "Nova movimentação de estoque", description: "Registre entrada, saída, transferência ou ajuste com lote e localização.", fields: [
+    { label: "Tipo de movimentação", name: "tipo", type: "select", options: ["Entrada", "Saída", "Transferência", "Ajuste"], required: true },
+    { label: "Material ou produto", name: "material", placeholder: "Ex.: PET PCR / Tampa 28mm", required: true },
+    { label: "Lote", name: "lote", required: true },
+    { label: "Quantidade", name: "quantidade", type: "number", required: true },
+    { label: "Local de origem/destino", name: "local", placeholder: "Ex.: Silo 02 / A-01-03", required: true },
+    { label: "Observações", name: "observacoes", type: "textarea" },
+  ] },
+  "/configuracoes": { title: "Nova regra operacional", description: "Cadastre um parâmetro para orientar aprovações, alertas ou rotinas do ERP.", fields: [
+    { label: "Nome da regra", name: "nome", placeholder: "Ex.: Alerta de estoque mínimo", required: true },
+    { label: "Módulo", name: "modulo", type: "select", options: ["Produção", "Qualidade", "Estoque", "RH", "Financeiro"], required: true },
+    { label: "Condição", name: "condicao", placeholder: "Ex.: Estoque abaixo de 20%", required: true },
+    { label: "Responsável", name: "responsavel", placeholder: "Perfil ou usuário notificado", required: true },
+    { label: "Detalhamento", name: "detalhamento", type: "textarea" },
+  ] },
+  "/meu-perfil": { title: "Novo apontamento pessoal", description: "Registre uma ocorrência, justificativa ou observação da sua jornada.", fields: [
+    { label: "Tipo de apontamento", name: "tipo", type: "select", options: ["Entrada/saída", "Atraso", "Justificativa", "Observação"], required: true },
+    { label: "Data", name: "data", type: "date", required: true },
+    { label: "Descrição", name: "descricao", type: "textarea", placeholder: "Explique o apontamento para análise do gestor...", required: true },
   ] },
   "/financeiro": { title: "Novo lançamento financeiro", description: "Registre uma conta, recebimento ou custo vinculado à operação.", fields: [
     { label: "Tipo de lançamento", name: "tipo", type: "select", options: ["Conta a pagar", "Conta a receber", "Custo industrial", "Fluxo de caixa"], required: true },

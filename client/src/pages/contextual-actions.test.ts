@@ -9,6 +9,9 @@ describe("contextual ERP actions", () => {
     expect(source).toContain('"/qualidade": { title: "Novo ticket de qualidade"');
     expect(source).toContain('"/manutencao": { title: "Novo ticket de manutenção"');
     expect(source).toContain('"/ordens": { title: "Nova ordem de produção"');
+    expect(source).toContain('"/estoque": { title: "Nova movimentação de estoque"');
+    expect(source).toContain('"/meu-perfil": { title: "Novo apontamento pessoal"');
+    expect(source).toContain('"/configuracoes": { title: "Nova regra operacional"');
     expect(source).toContain("NewActionModal");
     expect(source).toContain("setActionContext");
     expect(source).toContain("const target = context ??");
