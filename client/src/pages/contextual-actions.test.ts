@@ -11,5 +11,7 @@ describe("contextual ERP actions", () => {
     expect(source).toContain('"/ordens": { title: "Nova ordem de produção"');
     expect(source).toContain("NewActionModal");
     expect(source).toContain("setActionContext");
+    expect(source).toContain("const target = context ??");
+    expect(source).toContain("Identificação validada");
   });
 });

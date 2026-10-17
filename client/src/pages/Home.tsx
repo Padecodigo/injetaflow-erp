@@ -636,19 +636,22 @@ export default function Home() {
   const [user, setUser] = useState<{ name: string; record: string; role: "admin" | "collaborator" } | null>(null);
   const [accessModal, setAccessModal] = useState<"login" | "record" | null>(null);
   const [actionContext, setActionContext] = useState<NavItem | null>(null);
+  const [actionActor, setActionActor] = useState<{ name: string; record: string } | null>(null);
   const isErpEntry = location === "/erp";
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
 
-  const handleNewOrder = () => {
+  const handleNewOrder = (context?: NavItem) => {
+    const target = context ?? navItems.find((item) => item.href === location) ?? navItems[0];
+    setActionContext(target);
     if (isLogged && user) {
+      setActionActor(user);
       toast.success("Ação autorizada", { description: `Registrada por ${user.name} · ${user.record}.` });
-      setActionContext(user ? navItems.find((item) => item.href === location) ?? navItems[0] : null);
       return;
     }
     setAccessModal("record");
   };
   const handleLogin = (email: string, password: string) => { const session = authenticateDemoUser(email, password); if (!session) { toast.error(isDemoAdmin(email) ? "Senha administrativa inválida" : "Usuário ou senha inválidos", { description: "Use uma credencial demonstrativa autorizada para este protótipo." }); return; } setUser(session); setIsLogged(true); setAccessModal(null); navigate("/dashboard"); toast.success(`Sessão autenticada`, { description: session.role === "admin" ? "Administrador Wamovale · acesso total liberado." : `${session.name} · sua área pessoal foi liberada.` }); };
-  const handleAction = (record: string) => { setUser((currentUser) => currentUser ? { ...currentUser, record } : currentUser); setAccessModal(null); toast.success("Apontamento autorizado", { description: `Ação registrada por ${user?.name ?? "operador identificado"} · ${record}.` }); };
+  const handleAction = (record: string) => { const actor = { name: user?.name ?? "Operador identificado", record }; setActionActor(actor); setUser((currentUser) => currentUser ? { ...currentUser, record } : currentUser); setAccessModal(null); toast.success("Identificação validada", { description: `Ação registrada por ${actor.name} · ${record}.` }); };
   const handleRestrictedNavigation = (item: NavItem) => { if (item.restricted && !isLogged) { toast.info("Acesso autorizado necessário", { description: `Entre para acessar ${item.label} e manter a rastreabilidade.` }); setAccessModal("login"); return; } navigate(item.href); setMobileOpen(false); };
   const handleNotification = () => toast("Você está em dia", { description: "Não há novas notificações além dos 3 alertas operacionais." });
   const handleHelp = () => toast.info("Central de ajuda", { description: "Fale com seu especialista ou abra um chamado pelo canal interno da empresa." });
@@ -661,7 +664,7 @@ export default function Home() {
   if (institutionalPages[location]) return <InstitutionalPage path={location} />;
   const isProtectedErpRoute = navItems.some((item) => item.href === location);
   if ((isErpEntry || isProtectedErpRoute) && !isLogged) return <><ErpEntryPage onLogin={() => setAccessModal("login")} />{accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
-    {actionContext && <NewActionModal context={actionContext} actor={user} onClose={() => setActionContext(null)} />}</>;
+    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onClose={() => { setActionContext(null); setActionActor(null); }} />}</>;
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? "sidebar--open" : ""}`}>
@@ -677,7 +680,7 @@ export default function Home() {
       <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b></span></footer>
     </main>
     {accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
-    {actionContext && <NewActionModal context={actionContext} actor={user} onClose={() => setActionContext(null)} />}
+    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onClose={() => { setActionContext(null); setActionActor(null); }} />}
   </div>;
 }
 
