@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, CheckCircle2, Clock3, History, KeyRound, Loader2, LogOut, Plus } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, History, KeyRound, Loader2, LogOut, Pencil, Plus, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { PERMISSION_KEYS, PERMISSION_LABELS } from "@shared/erp/modules";
 import { trpc } from "@/lib/trpc";
@@ -10,32 +10,45 @@ import { formatDate, formatDateTime, initials, todayInput } from "../format";
 import { PageHeader } from "../components/ModuleCrud";
 import { EmptyState, Modal, Spinner, StatusPill } from "../components/ui";
 
-const TIPOS_OCORRENCIA = ["Justificativa de ausência", "Atraso", "Esquecimento de batida", "Observação"] as const;
+const TIPOS_OCORRENCIA = ["Justificativa de ausência", "Atraso", "Esquecimento de batida", "Ajuste de ponto", "Observação"] as const;
+type TipoOcorrencia = (typeof TIPOS_OCORRENCIA)[number];
+type OcorrenciaRow = { id: string; tipo: unknown; data: unknown; descricao: unknown; status: unknown };
 
-function OcorrenciaModal({ onClose }: { onClose: () => void }) {
+/** Nova ocorrência ou edição de uma ocorrência pendente (N07). Mensagens em português junto ao campo (N10). */
+function OcorrenciaModal({ onClose, editing }: { onClose: () => void; editing?: OcorrenciaRow }) {
   const utils = trpc.useUtils();
   const create = trpc.perfil.novaOcorrencia.useMutation();
-  const [tipo, setTipo] = useState<(typeof TIPOS_OCORRENCIA)[number]>("Justificativa de ausência");
-  const [data, setData] = useState(todayInput());
-  const [descricao, setDescricao] = useState("");
+  const update = trpc.perfil.editarOcorrencia.useMutation();
+  const [tipo, setTipo] = useState<TipoOcorrencia>((editing?.tipo as TipoOcorrencia) ?? "Justificativa de ausência");
+  const [data, setData] = useState(editing ? String(editing.data) : todayInput());
+  const [descricao, setDescricao] = useState(editing ? String(editing.descricao) : "");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const busy = create.isPending || update.isPending;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const next: Record<string, string> = {};
+    if (!data) next.data = "Data: obrigatória.";
+    if (descricao.trim().length < 5) next.descricao = "Descrição: escreva pelo menos 5 caracteres.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
     try {
-      await create.mutateAsync({ tipo, data, descricao });
-      utils.perfil.resumo.invalidate();
-      toast.success("Apontamento pessoal registrado", { description: `${tipo} · ${formatDate(data)} · aguardando análise do gestor` });
+      if (editing) await update.mutateAsync({ id: editing.id, tipo, data, descricao });
+      else await create.mutateAsync({ tipo, data, descricao });
+      utils.perfil.invalidate();
+      utils.rh.invalidate();
+      toast.success(editing ? "Ocorrência atualizada" : "Apontamento pessoal registrado", { description: `${tipo} · ${formatDate(data)} · aguardando análise do gestor` });
       onClose();
     } catch (error) {
-      toastError("Não foi possível registrar", error);
+      toastError(editing ? "Não foi possível salvar" : "Não foi possível registrar", error);
     }
   };
   return (
-    <Modal title="Novo apontamento pessoal" eyebrow="Meu perfil" icon={<Plus size={20} />} description="Registre uma justificativa, atraso ou observação da sua jornada para análise do gestor." onClose={onClose}>
-      <form onSubmit={submit}>
-        <label className="modal-field"><span>Tipo *</span><select value={tipo} onChange={e => setTipo(e.target.value as typeof tipo)}>{TIPOS_OCORRENCIA.map(t => <option key={t}>{t}</option>)}</select></label>
-        <label className="modal-field"><span>Data *</span><input type="date" required value={data} onChange={e => setData(e.target.value)} /></label>
-        <label className="modal-field"><span>Descrição *</span><textarea required minLength={5} rows={3} value={descricao} onChange={e => setDescricao(e.target.value)} /></label>
-        <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancelar</button><button className="button button--primary" disabled={create.isPending}>{create.isPending && <Loader2 size={15} className="erp-spin" />}Registrar</button></div>
+    <Modal title={editing ? "Editar ocorrência" : "Novo apontamento pessoal"} eyebrow="Meu perfil" icon={editing ? <Pencil size={20} /> : <Plus size={20} />} description="Registre uma justificativa, atraso, ajuste de ponto ou observação da sua jornada para análise do gestor." onClose={onClose}>
+      <form onSubmit={submit} noValidate aria-label={editing ? "Editar ocorrência" : "Nova ocorrência"}>
+        <label className="modal-field"><span>Tipo *</span><select value={tipo} onChange={e => setTipo(e.target.value as TipoOcorrencia)}>{TIPOS_OCORRENCIA.map(t => <option key={t}>{t}</option>)}</select></label>
+        <label className="modal-field"><span>Data *</span><input type="date" value={data} aria-invalid={errors.data ? true : undefined} onChange={e => setData(e.target.value)} />{errors.data && <small className="erp-field-error" role="alert">{errors.data}</small>}</label>
+        <label className="modal-field"><span>Descrição *</span><textarea rows={3} maxLength={2000} value={descricao} aria-invalid={errors.descricao ? true : undefined} onChange={e => setDescricao(e.target.value)} />{errors.descricao && <small className="erp-field-error" role="alert">{errors.descricao}</small>}</label>
+        <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Voltar</button><button className="button button--primary" disabled={busy}>{busy && <Loader2 size={15} className="erp-spin" />}{editing ? "Salvar alterações" : "Registrar"}</button></div>
       </form>
     </Modal>
   );
@@ -80,6 +93,19 @@ export default function MeuPerfilPage() {
   const resumo = trpc.perfil.resumo.useQuery();
   const ponto = trpc.perfil.registrarPonto.useMutation();
   const [ocorrencia, setOcorrencia] = useState(false);
+  const [editando, setEditando] = useState<OcorrenciaRow | null>(null);
+  const cancelar = trpc.perfil.cancelarOcorrencia.useMutation();
+  const cancelarOcorrencia = async (o: OcorrenciaRow) => {
+    if (!window.confirm(`Cancelar a ocorrência "${String(o.tipo)}" de ${formatDate(o.data)}?`)) return;
+    try {
+      await cancelar.mutateAsync({ id: o.id });
+      utils.perfil.invalidate();
+      utils.rh.invalidate();
+      toast.success("Ocorrência cancelada");
+    } catch (error) {
+      toastError("Não foi possível cancelar", error);
+    }
+  };
   const [periodo, setPeriodo] = useState<"mes" | "tudo">("mes");
   const [completo, setCompleto] = useState(false);
   const [origem, setOrigem] = useState<"Rede local" | "GPS" | "Manual">("Rede local");
@@ -102,8 +128,8 @@ export default function MeuPerfilPage() {
 
   const mesAtual = todayInput().slice(0, 7);
   const eventos = [
-    ...(resumo.data?.batidas ?? []).map(b => ({ id: b.id, quando: String(b.dataHora), titulo: `${String(b.tipo)} · ${formatDateTime(b.dataHora)}`, detalhe: `Origem: ${String(b.origem)}${b.simulado === "sim" ? " (simulada)" : ""}`, status: "Registrado" })),
-    ...(resumo.data?.ocorrencias ?? []).map(o => ({ id: o.id, quando: String(o.createdAt), titulo: `${String(o.tipo)} · ${formatDate(o.data)}`, detalhe: String(o.descricao), status: String(o.status) })),
+    ...(resumo.data?.batidas ?? []).map(b => ({ id: b.id, quando: String(b.dataHora), titulo: `${String(b.tipo)} · ${formatDateTime(b.dataHora)}`, detalhe: `Origem: ${String(b.origem)}${b.simulado === "sim" ? " (simulada)" : ""}`, status: "Registrado", ocorrencia: null as OcorrenciaRow | null })),
+    ...(resumo.data?.ocorrencias ?? []).map(o => ({ id: o.id, quando: String(o.createdAt), titulo: `${String(o.tipo)} · ${formatDate(o.data)}`, detalhe: `${String(o.descricao)}${o.parecer ? ` — Parecer de ${String(o.analisadoPor ?? "gestor")}: ${String(o.parecer)}` : ""}`, status: String(o.status), ocorrencia: o as unknown as OcorrenciaRow })),
   ].sort((a, b) => b.quando.localeCompare(a.quando)).filter(e => periodo === "tudo" || e.quando.slice(0, 7) === mesAtual);
   const visiveis = completo ? eventos : eventos.slice(0, 6);
 
@@ -141,7 +167,14 @@ export default function MeuPerfilPage() {
           </div>
           {resumo.isLoading ? <Spinner /> : visiveis.length === 0 ? <EmptyState><CalendarDays size={14} /> Nenhum registro {periodo === "mes" ? "neste mês" : "ainda"}.</EmptyState> : (
             <div className="profile-timeline">
-              {visiveis.map(e => <div key={e.id} data-testid="timeline-item"><span className="timeline-dot timeline-dot--teal" /><div><b>{e.titulo}</b><small>{e.detalhe}</small></div><span className="timeline-status">{e.status}</span></div>)}
+              {visiveis.map(e => (
+                <div key={e.id} data-testid="timeline-item"><span className="timeline-dot timeline-dot--teal" /><div><b>{e.titulo}</b><small>{e.detalhe}</small>
+                  {e.ocorrencia && e.status === "Pendente" && <span className="timeline-actions">
+                    <button type="button" className="button button--secondary button--compact" onClick={() => setEditando(e.ocorrencia)}><Pencil size={13} /> Editar</button>
+                    <button type="button" className="button button--secondary button--compact" disabled={cancelar.isPending} onClick={() => cancelarOcorrencia(e.ocorrencia!)}><XCircle size={13} /> Cancelar ocorrência</button>
+                  </span>}
+                </div><span className="timeline-status">{e.status}</span></div>
+              ))}
             </div>
           )}
           {eventos.length > 6 && <button type="button" className="panel-link panel-link--button" onClick={() => setCompleto(!completo)}>{completo ? "Mostrar menos" : `Ver histórico completo (${eventos.length})`} <History size={15} /></button>}
@@ -150,6 +183,7 @@ export default function MeuPerfilPage() {
         <SenhaForm />
       </div>
       {ocorrencia && <OcorrenciaModal onClose={() => setOcorrencia(false)} />}
+      {editando && <OcorrenciaModal editing={editando} onClose={() => setEditando(null)} />}
     </>
   );
 }

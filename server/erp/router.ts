@@ -16,7 +16,8 @@ import { createUser, deleteUser, listUsers, updateUser, userCreateSchema, userUp
 import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
 import { publicEmpresaId } from "./store";
 import { clientIp } from "./net";
-import type { UserData } from "./types";
+import type { SessionUser, UserData } from "./types";
+import type { DataRepository } from "./repository";
 import { normalizeText, todayIso } from "./text";
 
 const moduleKey = z.enum(MODULE_KEYS);
@@ -178,11 +179,40 @@ export const rhRouter = router({
   relatorio: moduleProcedure("rh", "ver").input(relatorioInput).query(({ ctx, input }) => relatorio(ctx.repo, ctx.user.empresaId, input)),
   relatorioCsv: moduleProcedure("rh", "ver").input(relatorioInput).mutation(({ ctx, input }) => relatorioCsv(ctx.repo, ctx.user.empresaId, input)),
   historico: moduleProcedure("rh", "ver").input(z.object({ matricula: z.string().min(1).max(40) })).query(({ ctx, input }) => historico(ctx.repo, ctx.user.empresaId, input.matricula)),
+  // N07: gestor/RH analisa as ocorrências (aprovar ou recusar, com parecer e auditoria)
+  ocorrencias: moduleProcedure("rh", "ver")
+    .input(z.object({ status: z.enum(["Pendente", "Aprovada", "Recusada", "Cancelada"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const { items } = await ctx.repo.list<RecordData>("ocorrencias", ctx.user.empresaId, { filter: data => !input?.status || data.status === input.status, limit: 500 });
+      return items.map(flatten);
+    }),
+  analisarOcorrencia: moduleProcedure("rh", "editar")
+    .input(z.object({ id: z.string().min(1), decisao: z.enum(["Aprovada", "Recusada"]), parecer: z.string().trim().max(1000).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const record = await ctx.repo.get<RecordData>("ocorrencias", ctx.user.empresaId, input.id);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
+      if (record.data.status !== "Pendente") throw new TRPCError({ code: "BAD_REQUEST", message: `Esta ocorrência já está "${String(record.data.status)}".` });
+      if (input.decisao === "Recusada" && !input.parecer) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da recusa no parecer." });
+      if (normalizeText(record.data.matricula) === normalizeText(ctx.user.matricula)) throw new TRPCError({ code: "FORBIDDEN", message: "Você não pode analisar a sua própria ocorrência." });
+      const updated = await ctx.repo.update<RecordData>("ocorrencias", ctx.user.empresaId, input.id, { status: input.decisao, parecer: input.parecer || undefined, analisadoPor: ctx.user.nome, analisadoEm: new Date().toISOString() }, actorOf(ctx.user));
+      await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "ocorrencias", registroId: input.id, resumo: `Ocorrência ${input.decisao.toLowerCase()} (${String(record.data.tipo)} de ${String(record.data.nome)} em ${String(record.data.data)})${input.parecer ? `: ${input.parecer}` : ""}` });
+      return flatten(updated!);
+    }),
 });
 
 export const dashboardRouter = router({
   summary: moduleProcedure("dashboard", "ver").input(z.object({ periodo: z.enum(["hoje", "7d", "30d"]).default("hoje") }).optional()).query(({ ctx, input }) => dashboardSummary(ctx.repo, ctx.user.empresaId, input?.periodo ?? "hoje")),
 });
+
+const OCORRENCIA_TIPOS = ["Justificativa de ausência", "Atraso", "Esquecimento de batida", "Ajuste de ponto", "Observação"] as const;
+const ocorrenciaInput = z.object({ tipo: z.enum(OCORRENCIA_TIPOS, { message: "Escolha o tipo da ocorrência." }), data: dateStr, descricao: z.string().trim().min(5, "Descreva a ocorrência (mínimo 5 caracteres).").max(2000) });
+
+async function propriaPendente(ctx: { repo: DataRepository; user: SessionUser }, id: string) {
+  const record = await ctx.repo.get<RecordData>("ocorrencias", ctx.user.empresaId, id);
+  if (!record || normalizeText(record.data.matricula) !== normalizeText(ctx.user.matricula)) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
+  if (record.data.status !== "Pendente") throw new TRPCError({ code: "BAD_REQUEST", message: `Esta ocorrência já está "${String(record.data.status)}" e não pode mais ser alterada.` });
+  return record;
+}
 
 export const perfilRouter = router({
   resumo: protectedProcedure.query(async ({ ctx }) => {
@@ -193,11 +223,34 @@ export const perfilRouter = router({
     .input(pontoInput.omit({ matricula: true }))
     .mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, { ...input, matricula: ctx.user.matricula })),
   novaOcorrencia: protectedProcedure
-    .input(z.object({ tipo: z.enum(["Justificativa de ausência", "Atraso", "Esquecimento de batida", "Observação"]), data: dateStr, descricao: z.string().trim().min(5, "Descreva a ocorrência").max(2000) }))
+    .input(ocorrenciaInput)
     .mutation(async ({ ctx, input }) => {
       const record = await ctx.repo.insert<RecordData>("ocorrencias", ctx.user.empresaId, { ...input, matricula: ctx.user.matricula, nome: ctx.user.nome, status: "Pendente" }, { actor: actorOf(ctx.user) });
       await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "criar", modulo: "ocorrencias", registroId: record.id, resumo: `${input.tipo} em ${input.data}` });
       return flatten(record);
+    }),
+  // N07: o colaborador acompanha, edita e cancela as próprias ocorrências enquanto estiverem pendentes
+  minhasOcorrencias: protectedProcedure.query(async ({ ctx }) => {
+    const wanted = normalizeText(ctx.user.matricula);
+    const { items } = await ctx.repo.list<RecordData>("ocorrencias", ctx.user.empresaId, { filter: data => normalizeText(data.matricula) === wanted, limit: 200 });
+    return items.map(flatten);
+  }),
+  editarOcorrencia: protectedProcedure
+    .input(ocorrenciaInput.extend({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await propriaPendente(ctx, id);
+      const record = await ctx.repo.update<RecordData>("ocorrencias", ctx.user.empresaId, id, data, actorOf(ctx.user));
+      await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "ocorrencias", registroId: id, resumo: `Ocorrência editada pelo colaborador: ${data.tipo} em ${data.data}` });
+      return flatten(record!);
+    }),
+  cancelarOcorrencia: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const atual = await propriaPendente(ctx, input.id);
+      const record = await ctx.repo.update<RecordData>("ocorrencias", ctx.user.empresaId, input.id, { status: "Cancelada", canceladaEm: new Date().toISOString() }, actorOf(ctx.user));
+      await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "ocorrencias", registroId: input.id, resumo: `Ocorrência cancelada pelo colaborador: ${String(atual.data.tipo)} em ${String(atual.data.data)}` });
+      return flatten(record!);
     }),
 });
 

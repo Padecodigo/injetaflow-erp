@@ -619,3 +619,13 @@ select.select-button { height: 32px; padding: 0 10px; border: 1px solid var(--li
 .resume-upload:focus-within { outline: 2px solid #ef7f12; outline-offset: 2px; }
 .resume-upload--error { border-color: #c2410c; background: #fff4ef; color: #9a3412; }
 .public-field-error { display: block; margin-top: 4px; font-size: 11px; }
+/* N07: ações da ocorrência pendente na linha do tempo */
+.timeline-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* N07: painel de análise de ocorrências */
+.ocorrencia-list { display: grid; gap: 10px; }
+.ocorrencia-item { padding: 12px 14px; border: 1px solid var(--line, #e5e7eb); border-radius: 10px; background: #fff; min-width: 0; }
+.ocorrencia-item p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.ocorrencia-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ocorrencia-head .status-pill, .ocorrencia-head > span:last-child { margin-left: auto; }
+.ocorrencia-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.ocorrencia-actions .modal-field { flex: 1 1 220px; margin: 0; }

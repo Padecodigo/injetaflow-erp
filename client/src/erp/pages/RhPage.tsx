@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Clock3, Download, History, Loader2, MapPin, UserPlus } from "lucide-react";
+import { Check, Clock3, Download, History, Loader2, MapPin, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { MODULES } from "@shared/erp/modules";
 import { trpc } from "@/lib/trpc";
@@ -129,6 +129,63 @@ function Relatorio({ onHistorico }: { onHistorico: (matricula: string) => void }
   );
 }
 
+/** N07: gestor/RH aprova ou recusa as ocorrências dos colaboradores (com parecer). */
+function OcorrenciasAnalise({ canEdit }: { canEdit: boolean }) {
+  const utils = trpc.useUtils();
+  const [status, setStatus] = useState<"Pendente" | "Aprovada" | "Recusada" | "Cancelada" | "">("Pendente");
+  const list = trpc.rh.ocorrencias.useQuery(status ? { status } : undefined);
+  const analisar = trpc.rh.analisarOcorrencia.useMutation();
+  const [pareceres, setPareceres] = useState<Record<string, string>>({});
+  const [erros, setErros] = useState<Record<string, string>>({});
+  const decidir = async (id: string, decisao: "Aprovada" | "Recusada") => {
+    const parecer = pareceres[id]?.trim() ?? "";
+    if (decisao === "Recusada" && !parecer) {
+      setErros(e => ({ ...e, [id]: "Parecer: informe o motivo da recusa." }));
+      return;
+    }
+    setErros(e => ({ ...e, [id]: "" }));
+    try {
+      await analisar.mutateAsync({ id, decisao, parecer: parecer || undefined });
+      utils.rh.invalidate();
+      utils.perfil.invalidate();
+      toast.success(`Ocorrência ${decisao.toLowerCase()}`);
+    } catch (error) {
+      toastError("Não foi possível analisar", error);
+    }
+  };
+  const rows = list.data ?? [];
+  return (
+    <section className="panel rh-ocorrencias-panel" aria-label="Ocorrências para análise">
+      <div className="panel-heading">
+        <div><span className="panel-kicker">Análise do gestor</span><h2>Ocorrências dos colaboradores</h2></div>
+        <select className="select-button" aria-label="Filtrar ocorrências" value={status} onChange={e => setStatus(e.target.value as typeof status)}>
+          <option value="Pendente">Pendentes</option><option value="Aprovada">Aprovadas</option><option value="Recusada">Recusadas</option><option value="Cancelada">Canceladas</option><option value="">Todas</option>
+        </select>
+      </div>
+      {list.isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState>Nenhuma ocorrência {status ? status.toLowerCase() : ""}.</EmptyState> : (
+        <div className="ocorrencia-list">
+          {rows.map(o => (
+            <article className="ocorrencia-item" key={o.id} data-testid="ocorrencia-item">
+              <div className="ocorrencia-head"><b>{String(o.nome)}</b><small className="erp-muted"> {String(o.matricula)} · {String(o.tipo)} · {formatDate(o.data)}</small><StatusPill label={String(o.status)} /></div>
+              <p>{String(o.descricao)}</p>
+              {o.parecer ? <p className="erp-muted">Parecer de {String(o.analisadoPor ?? "gestor")}: {String(o.parecer)}</p> : null}
+              {canEdit && o.status === "Pendente" && (
+                <div className="ocorrencia-actions">
+                  <label className="modal-field"><span>Parecer (obrigatório para recusar)</span><input aria-label={`Parecer da ocorrência de ${String(o.nome)}`} maxLength={1000} value={pareceres[o.id] ?? ""} onChange={e => setPareceres(p => ({ ...p, [o.id]: e.target.value }))} />{erros[o.id] && <small className="erp-field-error" role="alert">{erros[o.id]}</small>}</label>
+                  <div className="table-actions">
+                    <button type="button" className="button button--primary button--compact" disabled={analisar.isPending} onClick={() => decidir(o.id, "Aprovada")}><Check size={14} /> Aprovar</button>
+                    <button type="button" className="button button--secondary button--compact" disabled={analisar.isPending} onClick={() => decidir(o.id, "Recusada")}><X size={14} /> Recusar</button>
+                  </div>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function RhPage() {
   const { can } = useSession();
   const canEdit = can("rh", "editar");
@@ -176,6 +233,7 @@ export default function RhPage() {
         )}
         {pessoas.length > 8 && <button type="button" className="panel-link panel-link--button" onClick={() => setCompleto(!completo)}>{completo ? "Mostrar menos" : `Ver quadro completo (${pessoas.length})`}</button>}
       </section>
+      <OcorrenciasAnalise canEdit={canEdit} />
       <Relatorio onHistorico={setHistorico} />
       <ModuleCrud mod={MODULES.colaboradores} embedded title="Colaboradores" extraActions={(row: RecordRow) => [
         { label: "Histórico", onSelect: () => setHistorico(String(row.matricula)), icon: <History size={14} /> },
