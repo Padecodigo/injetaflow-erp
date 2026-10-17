@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setup } from "./helpers";
-import { registrarPonto } from "../rh";
+import { registrarPontoDemonstracao } from "../ponto-demonstracao";
 import { periodStart } from "../dashboard";
 
 describe("dashboard operacional", () => {
@@ -15,7 +15,7 @@ describe("dashboard operacional", () => {
     await c({ module: "producao", data: { ordem: "OP-0001", matricula: "MAT-1", quantidadeBoa: 950, refugo: 50, turno: "1º turno" } });
     await c({ module: "estoque", data: { codigo: "E", material: "M", categoria: "Resina", saldo: 1, unidade: "kg", estoqueMinimo: 10, status: "Normal" } });
     await c({ module: "qualidade", data: { tipo: "Inspeção", loteOrdem: "L", produto: "P", severidade: "Crítica", status: "Quarentena", descricao: "d" } });
-    await registrarPonto(repo, (await admin.caller.auth.me())!, { matricula: "MAT-1", tipo: "Entrada", origem: "GPS" });
+    await registrarPontoDemonstracao(repo, (await admin.caller.auth.me())!, { matricula: "MAT-1", tipo: "Entrada", demo: true });
     const s = await admin.caller.dashboard.summary({ periodo: "hoje" });
     expect(s.indicadores).toMatchObject({ producaoBoa: 950, refugo: 50, refugoPct: 5, ordensAtivas: 1, ordensUrgentes: 1, ordensAtrasadas: 1, estoqueBaixo: 1, qualidadeAbertos: 1, presentes: 1 });
     expect(s.serie.reduce((sum, p) => sum + p.value, 0)).toBe(950);

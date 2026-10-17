@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PERFIL_PRESETS } from "@shared/erp/modules";
-import { callerFor, createAndLogin, setup } from "./helpers";
-import { nextAllowed, PONTO_SO_NO_RELOGIO, registrarPonto, stateFromLast } from "../rh";
+import { createAndLogin, setup } from "./helpers";
+import { nextAllowed, stateFromLast } from "../rh";
+import { registrarPontoDemonstracao } from "../ponto-demonstracao";
 import { todayIso } from "../text";
 
 async function withColab() {
@@ -21,28 +21,28 @@ describe("RH e ponto", () => {
     expect((await admin.caller.records.list({ module: "colaboradores" })).total).toBe(3);
   });
 
-  it("presentes, intervalo e saída seguem as batidas; origem simulada é marcada", async () => {
+  it("presentes, intervalo e saída seguem as batidas; marcação de demonstração é simulada e tem origem própria (P7-07)", async () => {
     const { repo, admin } = await withColab();
     const user = (await admin.caller.auth.me())!;
-    // F0a: o lançamento por matrícula passa pela função interna (seed/testes), não pela API
-    const entrada = await registrarPonto(repo, user, { matricula: "mat-0001", tipo: "Entrada", origem: "GPS" });
-    expect(entrada).toMatchObject({ simulado: "sim", nome: "Pessoa Um", origem: "GPS" });
-    await registrarPonto(repo, user, { matricula: "MAT-0002", tipo: "Entrada", origem: "Manual" });
-    await registrarPonto(repo, user, { matricula: "MAT-0002", tipo: "Início de intervalo", origem: "Rede local" });
+    // F0a/P7-05: só a função de demonstração (seed/testes) grava; não há rota
+    const entrada = await registrarPontoDemonstracao(repo, user, { matricula: "mat-0001", tipo: "Entrada", demo: true });
+    expect(entrada).toMatchObject({ simulado: "sim", nome: "Pessoa Um", origem: "Demonstração", validacao: "OK", foraDeSequencia: false });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0002", tipo: "Entrada", demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0002", tipo: "Início de intervalo", demo: true });
     const q = await admin.caller.rh.presenca();
     expect(q.totais).toMatchObject({ presentes: 1, intervalo: 1, ausentes: 0, batidas: 3 });
-    expect(q.totais.origens).toMatchObject({ GPS: 1, Manual: 1, "Rede local": 1 });
+    expect(q.totais.origens).toEqual({ "Demonstração": 3 });
   });
 
   it("F0a (regressão): não recusa batida fora de sequência; grava e marca como DIVERGENTE", async () => {
     const { repo, admin } = await withColab();
     const user = (await admin.caller.auth.me())!;
     // antes da F0a: rejects.toThrow(/fora de sequência/). Portaria 671, arts. 74 e 98: nunca bloquear a marcação.
-    const saida = await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Saída", origem: "GPS" });
+    const saida = await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Saída", demo: true });
     expect(saida).toMatchObject({ tipo: "Saída", foraDeSequencia: true, validacao: "DIVERGENTE" });
     expect(String(saida.divergencia)).toMatch(/após "nenhuma batida" o esperado era Entrada/);
     // segunda Saída seguida também é gravada
-    const saida2 = await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Saída", origem: "GPS" });
+    const saida2 = await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Saída", demo: true });
     expect(saida2).toMatchObject({ foraDeSequencia: true });
     const { items } = await admin.caller.records.list({ module: "ponto" });
     expect(items).toHaveLength(2);
@@ -51,14 +51,13 @@ describe("RH e ponto", () => {
     expect(auditoria.total).toBe(2);
   });
 
-  it("F0a: sequência válida não é marcada como divergente", async () => {
+  it("F0a/P7-06: sequência válida fica com validacao OK e foraDeSequencia false (campos declarados no módulo)", async () => {
     const { repo, admin } = await withColab();
     const user = (await admin.caller.auth.me())!;
-    const entrada = await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Entrada", origem: "Manual" });
-    const intervalo = await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Início de intervalo", origem: "Manual" });
+    const entrada = await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Entrada", demo: true });
+    const intervalo = await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Início de intervalo", demo: true });
     for (const batida of [entrada, intervalo]) {
-      expect(batida.foraDeSequencia).toBeUndefined();
-      expect(batida.validacao).toBeUndefined();
+      expect(batida).toMatchObject({ foraDeSequencia: false, validacao: "OK" });
       expect(batida.divergencia).toBeUndefined();
     }
   });
@@ -66,44 +65,10 @@ describe("RH e ponto", () => {
   it("matrícula inexistente continua recusada; nextAllowed vira só sugestão", async () => {
     const { repo, admin } = await withColab();
     const user = (await admin.caller.auth.me())!;
-    await expect(registrarPonto(repo, user, { matricula: "XXX", tipo: "Entrada", origem: "GPS" })).rejects.toThrow(/não encontrada/);
+    await expect(registrarPontoDemonstracao(repo, user, { matricula: "XXX", tipo: "Entrada", demo: true })).rejects.toThrow(/não encontrada/);
     expect(nextAllowed(null)).toEqual(["Entrada"]);
     expect(nextAllowed("Início de intervalo")).toEqual(["Fim de intervalo"]);
     expect(stateFromLast("Saída")).toBe("Saiu");
-  });
-
-  it("F0a/F0c (regressão): rh.registrarPonto responde FORBIDDEN para qualquer perfil, inclusive Administrador", async () => {
-    const { repo, admin, empresaId } = await withColab();
-    const gestor = await createAndLogin(repo, empresaId, { email: "gestor@teste.local", perfil: "Gestor", permissoes: PERFIL_PRESETS.Gestor, matricula: "MAT-0002" });
-    const operador = await createAndLogin(repo, empresaId, { email: "op@teste.local", perfil: "Operador", permissoes: PERFIL_PRESETS.Operador, matricula: "MAT-0001" });
-    const terceiro = { matricula: "MAT-0001", tipo: "Entrada", origem: "Manual" } as const;
-    for (const quem of [admin, gestor, operador]) {
-      await expect(quem.caller.rh.registrarPonto(terceiro)).rejects.toMatchObject({ code: "FORBIDDEN", message: PONTO_SO_NO_RELOGIO });
-    }
-    // payload vazio ou inválido também recebe a orientação, não um erro de validação
-    await expect(admin.caller.rh.registrarPonto(undefined)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect((await admin.caller.records.list({ module: "ponto" })).total).toBe(0);
-    const negadas = await admin.caller.config.auditoria({ search: "em nome de outra pessoa" });
-    expect(negadas.total).toBe(4);
-  });
-
-  it("F0c (regressão): perfil.registrarPonto responde FORBIDDEN; ninguém registra o próprio ponto pelo ERP", async () => {
-    const { repo, empresaId, admin } = await withColab();
-    const colab = await createAndLogin(repo, empresaId, { email: "um@teste.local", matricula: "MAT-0001", permissoes: {} });
-    for (const quem of [colab, admin]) {
-      await expect(quem.caller.perfil.registrarPonto({ tipo: "Entrada", origem: "Rede local" })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/relógio oficial/) });
-    }
-    // matrícula de terceiro no payload também não passa
-    await expect(colab.caller.perfil.registrarPonto({ tipo: "Entrada", origem: "GPS", matricula: "MAT-0002" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect((await admin.caller.records.list({ module: "ponto" })).total).toBe(0);
-    expect((await admin.caller.config.auditoria({ search: "próprio ponto" })).total).toBe(3);
-  });
-
-  it("F0c: sem sessão, as duas procedures continuam UNAUTHORIZED", async () => {
-    const { repo } = await withColab();
-    const anon = await callerFor(repo);
-    await expect(anon.caller.rh.registrarPonto({ matricula: "MAT-0001", tipo: "Entrada", origem: "GPS" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    await expect(anon.caller.perfil.registrarPonto({ tipo: "Entrada", origem: "GPS" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
   it("F0c: marcações já gravadas continuam visíveis (somente leitura) no RH, no histórico e em Meu perfil", async () => {
@@ -111,11 +76,11 @@ describe("RH e ponto", () => {
     const user = (await admin.caller.auth.me())!;
     const day = new Date();
     day.setHours(6, 0, 0, 0);
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Entrada", origem: "Rede local", now: day, demo: true });
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Saída", origem: "Rede local", now: new Date(day.getTime() + 8 * 3600_000), demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Entrada", now: day, demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Saída", now: new Date(day.getTime() + 8 * 3600_000), demo: true });
     const colab = await createAndLogin(repo, empresaId, { email: "um@teste.local", matricula: "MAT-0001", permissoes: {} });
-    // tentativa bloqueada não some com o que já existe
-    await expect(colab.caller.perfil.registrarPonto({ tipo: "Entrada", origem: "GPS" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // tentativa bloqueada (CRUD genérico) não some com o que já existe
+    await expect(colab.caller.records.create({ module: "ponto", data: { matricula: "MAT-0001", tipo: "Entrada" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
     const lista = await admin.caller.records.list({ module: "ponto" });
     expect(lista.total).toBe(2);
     expect((await admin.caller.rh.historico({ matricula: "MAT-0001" })).batidas).toHaveLength(2);
@@ -138,14 +103,14 @@ describe("RH e ponto", () => {
     const day = new Date();
     day.setHours(6, 0, 0, 0);
     const at = (min: number) => new Date(day.getTime() + min * 60000);
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Entrada", origem: "Rede local", now: at(0) });
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Início de intervalo", origem: "Rede local", now: at(240) });
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Fim de intervalo", origem: "Rede local", now: at(300) });
-    await registrarPonto(repo, user, { matricula: "MAT-0001", tipo: "Saída", origem: "Manual", now: at(540) });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Entrada", now: at(0), demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Início de intervalo", now: at(240), demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Fim de intervalo", now: at(300), demo: true });
+    await registrarPontoDemonstracao(repo, user, { matricula: "MAT-0001", tipo: "Saída", now: at(540), demo: true });
     const hoje = todayIso(day);
     const rel = await admin.caller.rh.relatorio({ inicio: hoje, fim: hoje });
     const linha = rel.linhas.find(l => l.matricula === "MAT-0001")!;
-    expect(linha).toMatchObject({ minutosTrabalhados: 480, minutosIntervalo: 60, situacao: "Regular", origens: "Rede local, Manual", simulado: true });
+    expect(linha).toMatchObject({ minutosTrabalhados: 480, minutosIntervalo: 60, situacao: "Regular", origens: "Demonstração", simulado: true });
     const csv = await admin.caller.rh.relatorioCsv({ inicio: hoje, fim: hoje, matricula: "MAT-0001" });
     expect(csv.csv).toContain("Horas trabalhadas");
     expect(csv.csv).toContain("08:00");
@@ -155,7 +120,7 @@ describe("RH e ponto", () => {
 
   it("histórico do funcionário reúne batidas, ocorrências e apontamentos", async () => {
     const { repo, admin } = await withColab();
-    await registrarPonto(repo, (await admin.caller.auth.me())!, { matricula: "MAT-0001", tipo: "Entrada", origem: "GPS" });
+    await registrarPontoDemonstracao(repo, (await admin.caller.auth.me())!, { matricula: "MAT-0001", tipo: "Entrada", demo: true });
     const h = await admin.caller.rh.historico({ matricula: "MAT-0001" });
     expect(h.colaborador?.nome).toBe("Pessoa Um");
     expect(h.batidas).toHaveLength(1);
@@ -165,7 +130,7 @@ describe("RH e ponto", () => {
     const { repo, empresaId } = await setup();
     const colab = await createAndLogin(repo, empresaId, { email: "eu@teste.local", matricula: "MAT-0777", permissoes: {} });
     await colab.caller.perfil.novaOcorrencia({ tipo: "Atraso", data: "2026-10-17", descricao: "Trânsito na rodovia" });
-    await expect(colab.caller.perfil.registrarPonto({ tipo: "Entrada", origem: "Rede local" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(colab.caller.records.create({ module: "ponto", data: { matricula: "MAT-0777", tipo: "Entrada" } })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/relógio oficial/) });
     const resumo = await colab.caller.perfil.resumo();
     expect(resumo.usuario.matricula).toBe("MAT-0777");
     expect(resumo.ocorrencias[0]).toMatchObject({ tipo: "Atraso", status: "Pendente" });

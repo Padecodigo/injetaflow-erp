@@ -41,7 +41,7 @@ function Historico({ matricula, onClose }: { matricula: string; onClose: () => v
           <h3>Batidas de ponto ({h.data!.batidas.length})</h3>
           {h.data!.batidas.length === 0 ? <EmptyState>Nenhuma batida registrada.</EmptyState> : (
             <table className="module-table erp-compact-table"><thead><tr><th>Data e hora</th><th>Tipo</th><th>Origem</th><th>Simulada</th><th>Validação</th></tr></thead><tbody>
-              {h.data!.batidas.map(b => <tr key={b.id}><td>{formatDateTime(b.dataHora)}</td><td>{String(b.tipo)}</td><td>{String(b.origem)}</td><td>{String(b.simulado)}</td><td title={b.divergencia ? String(b.divergencia) : undefined}>{b.foraDeSequencia ? "Divergente (fora de sequência)" : "—"}</td></tr>)}
+              {h.data!.batidas.map(b => <tr key={b.id}><td>{formatDateTime(b.dataHora)}</td><td>{String(b.tipo)}</td><td>{String(b.origem)}</td><td>{String(b.simulado)}</td><td title={b.divergencia ? String(b.divergencia) : undefined}>{b.foraDeSequencia ? "Divergente (fora de sequência)" : b.validacao ? String(b.validacao) : "—"}</td></tr>)}
             </tbody></table>
           )}
           <h3>Ocorrências ({h.data!.ocorrencias.length})</h3>

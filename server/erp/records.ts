@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { PONTO_SO_NO_RELOGIO } from "@shared/erp/ponto";
 import { z } from "zod";
 import { MODULES, columnLabel, type FieldDef, type ModuleDef, type ModuleKey } from "@shared/erp/modules";
 import type { DataRepository, StoredRecord } from "./repository";
@@ -313,8 +314,7 @@ function describe(mod: ModuleDef, data: RecordData): string {
 }
 
 /** F0c (plano RH/Ponto v3, §7): orientação única para qualquer tentativa de registrar ponto pelo ERP. */
-export const PONTO_SO_NO_RELOGIO =
-  "O ponto é registrado no relógio oficial (REP) da empresa, não pelo ERP. Para corrigir ou justificar uma marcação, registre uma ocorrência de ajuste em Meu perfil para análise do RH.";
+export { PONTO_SO_NO_RELOGIO };
 /** N11: marcação de ponto não se apaga nem se edita (Portaria 671/MTE). */
 export const PONTO_IMUTAVEL = "Marcações de ponto não podem ser editadas nem excluídas (Portaria 671/MTE). Registre uma ocorrência de ajuste para o RH analisar.";
 

@@ -1,6 +1,8 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import { hasPermission, isAdminPerfil, type AccessLevel, type PermissionKey } from "@shared/erp/modules";
 import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPC_ERROR_CODES_BY_KEY } from "@trpc/server/rpc";
+import { PONTO_SO_NO_RELOGIO, ROTAS_PONTO_REMOVIDAS } from "@shared/erp/ponto";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import type { TrpcContext } from "./context";
@@ -21,7 +23,17 @@ export function friendlyZodMessage(error: ZodError): string {
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
-  errorFormatter({ shape, error }) {
+  errorFormatter({ shape, error, path }) {
+    // P7-02 (aceite PR #7): as rotas de registro de ponto foram removidas do router. Em vez do 404 genérico
+    // "No procedure found", quem chamar recebe 403 com a orientação de que o ponto é feito no relógio oficial (REP).
+    if (error.code === "NOT_FOUND" && path && (ROTAS_PONTO_REMOVIDAS as readonly string[]).includes(path)) {
+      return {
+        ...shape,
+        code: TRPC_ERROR_CODES_BY_KEY.FORBIDDEN,
+        message: PONTO_SO_NO_RELOGIO,
+        data: { ...shape.data, code: "FORBIDDEN", httpStatus: 403, rotaRemovida: true, stack: undefined },
+      };
+    }
     const cause = error.cause;
     if (error.code === "BAD_REQUEST" && cause instanceof ZodError) {
       const fieldErrors: Record<string, string> = {};
