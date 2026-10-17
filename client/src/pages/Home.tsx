@@ -518,11 +518,9 @@ const actionDefinitions: Record<string, ActionDefinition> = {
   ] },
 };
 
-type ActionRecord = { id: string; module: string; title: string; actor: string; record: string; createdAt: string; fields: Record<string, string> };
-
-function NewActionModal({ context, actor, onClose, onSave }: { context: NavItem; actor: { name: string; record: string } | null; onClose: () => void; onSave: (record: ActionRecord) => void }) {
+function NewActionModal({ context, actor, onClose }: { context: NavItem; actor: { name: string; record: string } | null; onClose: () => void }) {
   const definition = actionDefinitions[context.href] ?? actionDefinitions["/dashboard"];
-  return <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="access-modal action-modal" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const fields = Object.fromEntries(Array.from(form.entries()).map(([key, value]) => [key, String(value)])); const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`; onSave({ id, module: context.label, title: definition.title, actor: actor?.name ?? "Operador identificado", record: actor?.record ?? "REG informado", createdAt: new Date().toISOString(), fields }); onClose(); }}><button type="button" className="modal-close" onClick={onClose}><X size={18} /></button><div className="access-modal__icon"><Plus size={21} /></div><span className="eyebrow">{context.label}</span><h2>{definition.title}</h2><p>{definition.description}</p><div className="action-fields">{definition.fields.map((field) => <label className="modal-field" key={field.name}><span>{field.label}</span>{field.type === "textarea" ? <textarea name={field.name} placeholder={field.placeholder} required={field.required} rows={3} /> : field.type === "select" ? <select name={field.name} required={field.required} defaultValue=""><option value="" disabled>Selecione...</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input name={field.name} type={field.type ?? "text"} placeholder={field.placeholder} required={field.required} />}</label>)}</div><div className="modal-hint"><ShieldCheck size={14} /> Ação registrada automaticamente para {actor?.name ?? "a sessão autenticada"}.</div><button className="button button--primary modal-submit" type="submit">Salvar {definition.title.toLowerCase()}<ChevronRight size={16} /></button><button type="button" className="modal-cancel" onClick={onClose}>Cancelar</button></form></div>;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="access-modal action-modal" onSubmit={(event) => { event.preventDefault(); toast.success(`${definition.title} salvo`, { description: `Registrado por ${actor?.name ?? "usuário autenticado"} · ${actor?.record ?? "sessão ativa"}.` }); onClose(); }}><button type="button" className="modal-close" onClick={onClose}><X size={18} /></button><div className="access-modal__icon"><Plus size={21} /></div><span className="eyebrow">{context.label}</span><h2>{definition.title}</h2><p>{definition.description}</p><div className="action-fields">{definition.fields.map((field) => <label className="modal-field" key={field.name}><span>{field.label}</span>{field.type === "textarea" ? <textarea name={field.name} placeholder={field.placeholder} required={field.required} rows={3} /> : field.type === "select" ? <select name={field.name} required={field.required} defaultValue=""><option value="" disabled>Selecione...</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input name={field.name} type={field.type ?? "text"} placeholder={field.placeholder} required={field.required} />}</label>)}</div><div className="modal-hint"><ShieldCheck size={14} /> Ação registrada automaticamente para {actor?.name ?? "a sessão autenticada"}.</div><button className="button button--primary modal-submit" type="submit">Salvar {definition.title.toLowerCase()}<ChevronRight size={16} /></button><button type="button" className="modal-cancel" onClick={onClose}>Cancelar</button></form></div>;
 }
 
 function Dashboard({ onNewOrder, isLogged, userName }: { onNewOrder: (context?: NavItem) => void; isLogged: boolean; userName?: string }) {
@@ -659,20 +657,8 @@ export default function Home() {
   const [accessModal, setAccessModal] = useState<"login" | "record" | null>(null);
   const [actionContext, setActionContext] = useState<NavItem | null>(null);
   const [actionActor, setActionActor] = useState<{ name: string; record: string } | null>(null);
-  const [actionRecords, setActionRecords] = useState<ActionRecord[]>(() => {
-    try { return JSON.parse(localStorage.getItem("injetaflow-action-records") ?? "[]") as ActionRecord[]; } catch { return []; }
-  });
   const isErpEntry = location === "/erp";
   const current = useMemo(() => navItems.find((item) => item.href === location) ?? navItems[0], [location]);
-
-  const handleActionSave = (record: ActionRecord) => {
-    setActionRecords((current) => {
-      const next = [record, ...current].slice(0, 100);
-      try { localStorage.setItem("injetaflow-action-records", JSON.stringify(next)); } catch { /* mantém o evento na sessão mesmo sem armazenamento */ }
-      return next;
-    });
-    toast.success(`${record.title} registrado`, { description: `${record.module} · ${record.actor} · ${record.record}. Histórico local atualizado.` });
-  };
 
   const handleNewOrder = (context?: NavItem) => {
     const target = context ?? navItems.find((item) => item.href === location) ?? navItems[0];
@@ -698,7 +684,7 @@ export default function Home() {
   if (institutionalPages[location]) return <InstitutionalPage path={location} />;
   const isProtectedErpRoute = navItems.some((item) => item.href === location);
   if ((isErpEntry || isProtectedErpRoute) && !isLogged) return <><ErpEntryPage onLogin={() => setAccessModal("login")} />{accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
-    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onSave={handleActionSave} onClose={() => { setActionContext(null); setActionActor(null); }} />}</>;
+    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onClose={() => { setActionContext(null); setActionActor(null); }} />}</>;
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? "sidebar--open" : ""}`}>
@@ -710,17 +696,12 @@ export default function Home() {
     {mobileOpen && <button className="sidebar-overlay" aria-label="Fechar menu" onClick={() => setMobileOpen(false)} />}
     <main className="main-content">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><form className="global-search" onSubmit={handleSearch}><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ordens, lotes, produtos..." /><kbd>⌘ K</kbd></form><div className="topbar-actions"><span className={`access-mode ${isLogged ? "access-mode--logged" : ""}`}><span className="access-mode__dot" />{isLogged ? "Sessão autenticada" : "Acesso público"}</span><div className="topbar-date"><CalendarClock size={16} /><span>16 out. 2026</span><ChevronDown size={14} /></div><button className="topbar-icon" onClick={handleNotification}><span className="notification-dot" /><BellIcon /></button>{isLogged ? <div className="topbar-avatar">{user?.name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div> : <button className="login-button" onClick={() => setAccessModal("login")}><LogIn size={14} /> Entrar</button>}</div></header>
-      <div className="page-content"><>{current.href === "/dashboard" ? <Dashboard onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.restricted && !isLogged ? <RestrictedPage current={current} onNewOrder={handleNewOrder} onLogin={() => setAccessModal("login")} /> : current.href === "/rh" ? <RhPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/usuarios" ? <UsersAccessPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/meu-perfil" ? <ProfilePage onNewOrder={handleNewOrder} userName={user?.name} userRecord={user?.record} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : <ModulePage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} />}<RecentActionsPanel records={actionRecords} /></></div>
-      <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b>{actionRecords.length > 0 && <> · {actionRecords.length} registro(s) nesta sessão</>}</span></footer>
+      <div className="page-content">{current.href === "/dashboard" ? <Dashboard onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.restricted && !isLogged ? <RestrictedPage current={current} onNewOrder={handleNewOrder} onLogin={() => setAccessModal("login")} /> : current.href === "/rh" ? <RhPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/usuarios" ? <UsersAccessPage onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : current.href === "/meu-perfil" ? <ProfilePage onNewOrder={handleNewOrder} userName={user?.name} userRecord={user?.record} /> : current.href === "/configuracoes" ? <SettingsPage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} /> : <ModulePage current={current} onNewOrder={handleNewOrder} isLogged={isLogged} userName={user?.name} />}</div>
+      <footer className="app-footer"><span><span className="footer-pulse" /> Dados atualizados há 28 segundos</span><span>InjetaFlow ERP <b>v0.1 preview</b></span></footer>
     </main>
     {accessModal && <AccessModal mode={accessModal} isLogged={isLogged} userName={user?.name} onClose={() => setAccessModal(null)} onLogin={handleLogin} onAction={handleAction} />}
-    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onSave={handleActionSave} onClose={() => { setActionContext(null); setActionActor(null); }} />}
+    {actionContext && <NewActionModal context={actionContext} actor={actionActor ?? user} onClose={() => { setActionContext(null); setActionActor(null); }} />}
   </div>;
-}
-
-function RecentActionsPanel({ records }: { records: ActionRecord[] }) {
-  if (records.length === 0) return null;
-  return <section className="panel recent-actions-panel"><div className="panel-heading"><div><span className="panel-kicker">Rastreabilidade local</span><h2>Eventos registrados</h2></div><span className="selection-count">{records.length} evento(s)</span></div><div className="recent-actions-list">{records.slice(0, 6).map((record) => <div className="recent-action-row" key={record.id}><span className="recent-action-icon"><CheckCircle2 size={15} /></span><div><b>{record.title}</b><small>{record.module} · {record.actor} · {record.record}</small></div><time dateTime={record.createdAt}>{new Date(record.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></div>)}</div></section>;
 }
 
 function BellIcon() { return <span className="bell-icon"><span /></span>; }

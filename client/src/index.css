@@ -474,14 +474,3 @@ button.help-card:hover { background: rgba(239,127,18,.08); }
 .action-fields textarea, .action-fields select { width: 100%; min-height: 38px; padding: 10px; resize: vertical; outline: none; border: 1px solid #e1e5e6; border-radius: 7px; color: #3f474c; background: #fcfdfd; font: inherit; font-size: 11px; }
 .action-fields select { height: 38px; padding-block: 0; }
 @media (max-width: 600px) { .action-fields { grid-template-columns: 1fr; }.action-fields .modal-field:has(textarea), .action-fields .modal-field:has(select[name="modulos"]) { grid-column: auto; } }
-
-
-/* Eventos registrados: confirmação visual do salvamento local */
-.recent-actions-panel { margin-top: 20px; }
-.recent-actions-list { display: grid; gap: 2px; }
-.recent-action-row { display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
-.recent-action-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; color: var(--teal-dark); background: var(--teal-soft); }
-.recent-action-row b, .recent-action-row small { display: block; }
-.recent-action-row small { margin-top: 3px; color: var(--muted); font-size: 12px; }
-.recent-action-row time { color: var(--muted); font-size: 12px; white-space: nowrap; }
-@media (max-width: 700px) { .recent-action-row { grid-template-columns: 30px 1fr; } .recent-action-row time { grid-column: 2; } }
