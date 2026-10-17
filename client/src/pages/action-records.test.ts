@@ -8,7 +8,7 @@ describe("action records", () => {
     expect(source).toContain("localStorage.getItem(\"injetaflow-action-records\")");
     expect(source).toContain("localStorage.setItem(\"injetaflow-action-records\"");
     expect(source).toContain("crypto.randomUUID()");
-    expect(source).toContain("onSave({ id:");
+    expect(source).toContain("onSave({ id,");
     expect(source).toContain("Histórico local atualizado");
     expect(source).toContain("Eventos registrados");
     expect(source).toContain("RecentActionsPanel records={actionRecords}");
