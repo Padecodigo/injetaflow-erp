@@ -99,11 +99,29 @@ A F2 carrega o estado, chama o core e grava o resultado. O core não acessa banc
 - **CRC de REP-C e cursor (P8-R2-02, P8-R3-01):** com CRC como aviso (REP-C), o registro com CRC inválido pode
   entrar, mas nunca avança o cursor (`novoUltimoNsr`) nem a conferência de ordem, e não estende a análise de lacunas.
   Um registro com CRC inválido acima do próximo registro com CRC válido é marcado `NSR_FORA_DE_ORDEM` (P8-R3-02).
-  **CRC de outro algoritmo:** se nenhum registro com CRC do arquivo confere (caso esperado num REP-C com o CRC do
-  INMETRO), `parse.crcVerificavel` é `false`, sai o aviso de arquivo `CRC_NAO_VERIFICAVEL` e o CRC deixa de decidir
-  ordem e cursor, no parser e no pipeline (a mesma regra, `crcVerificavelNosRegistros`). O cursor avança normalmente
-  e lacuna, `ESTADO_INCOMPLETO`, `NSR_ABAIXO_DO_CURSOR`, retrocesso e salto continuam valendo. `planejarImportacao`
-  repassa `crcVerificavel`; `decidirImportacao` direto deduz pela mesma regra (opção `crcVerificavel` para forçar).
-  Com `crc: "ignorar"` não há conferência nem aviso (`crcVerificavel: null`).
+  **Verificabilidade do CRC (P8-R3-01, P8-R4-01):** o CRC só decide ordem e cursor quando é *verificável*.
+  - **Caminho recomendado (F2):** gravar por REP o algoritmo de CRC (KERMIT ou outro) e passar
+    `crcVerificavel: true | false` em `OpcoesParser` (e, se quiser, em `planejarImportacao`/`decidirImportacao`).
+    A opção explícita **sempre** vence a heurística. Com `false` e CRC como aviso, sai `CRC_NAO_VERIFICAVEL`
+    citando o cadastro do REP. `parse.crcConferencia` traz a medição (`comCrc`, `conferem`, `proporcao`,
+    `situacao`), útil para sugerir o algoritmo na 1ª importação de um REP novo.
+  - **Heurística (sem a opção):** proporção de registros com CRC (tipos 2–5) que conferem com o KERMIT, limites em
+    `LIMITES_CRC_PADRAO`, configuráveis por `limitesCrc` (parser e decisão):
+    | Proporção que confere | `situacao` | Efeito |
+    |---|---|---|
+    | ≥ 90% (`minimoVerificavel`) | `verificavel` | regra atual: CRC inválido não avança cursor nem ordem |
+    | ≤ 1% (`maximoNaoVerificavel`), coincidências incluídas | `nao-verificavel` | aviso `CRC_NAO_VERIFICAVEL` |
+    | entre os dois | `inconsistente` | aviso `CRC_INCONSISTENTE`, tratado como não verificável |
+    | sem registro com CRC | `sem-crc` | verificável (nada a conferir) |
+
+    O 1% absorve as coincidências casuais de um CRC de outro algoritmo com o KERMIT (≈ 1/65.536 por linha: ~4–5
+    em 300 mil linhas) e uma linha KERMIT inserida de propósito, que não liga mais a verificação. Em arquivo
+    pequeno, uma única linha corrompida ou coincidente pode cair em `inconsistente` (ex.: 1 de 50 = 2%): o arquivo
+    entra com aviso e sem quarentena indevida, mas o CRC não protege o cursor — por isso a opção explícita é o
+    caminho recomendado.
+  - Não verificável: o cursor avança normalmente e lacuna, `ESTADO_INCOMPLETO`, `NSR_ABAIXO_DO_CURSOR`, retrocesso
+    e salto continuam valendo. Parser e pipeline usam a mesma regra (`avaliarCrcRegistros`;
+    `crcVerificavelNosRegistros` é o atalho booleano). `planejarImportacao` repassa `parse.crcVerificavel`.
+  - Com `crc: "ignorar"` não há conferência nem aviso (`crcVerificavel: null`, salvo opção explícita).
 - **Somente leitura (P8-R3-06):** `problemas`, `errosGraves` (`readonly CodigoInconsistencia[]`) e os campos de
   `DataHoraAfd` são readonly no tipo; em tempo de execução são compartilhados e congelados. Para acrescentar, copie.

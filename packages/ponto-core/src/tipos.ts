@@ -29,6 +29,8 @@ export type CodigoInconsistencia =
   | "CRC_INVALIDO"
   // P8-R3-01: nenhum CRC do arquivo confere (CRC de outro algoritmo, ex.: INMETRO no REP-C)
   | "CRC_NAO_VERIFICAVEL"
+  // P8-R4-01: proporção de CRC válido entre os limites (nem KERMIT nem outro algoritmo)
+  | "CRC_INCONSISTENTE"
   | "HASH_CADEIA_INVALIDA"
   | "CADEIA_NAO_VERIFICAVEL"
   | "EMPREGADOR_FORA_DA_EMPRESA"
@@ -176,6 +178,26 @@ export interface LinhaInvalida extends LinhaBase {
   motivo: CodigoInconsistencia;
 }
 
+/** P8-R4-01: limites da proporção de registros com CRC-16/KERMIT válido (0 a 1). */
+export interface LimitesCrc {
+  /** Proporção mínima para o arquivo ser verificável. Padrão 0,9 (90%). */
+  minimoVerificavel: number;
+  /** Proporção máxima para "CRC de outro algoritmo" (inclui coincidências, ~1/65.536 por linha). Padrão 0,01 (1%). */
+  maximoNaoVerificavel: number;
+}
+
+/** P8-R4-01: resultado da conferência de CRC do arquivo. */
+export interface ConferenciaCrc {
+  situacao: "verificavel" | "nao-verificavel" | "inconsistente" | "sem-crc";
+  verificavel: boolean;
+  /** Registros com CRC (tipos 2 a 5). */
+  comCrc: number;
+  /** Desses, quantos conferem com o CRC-16/KERMIT. */
+  conferem: number;
+  /** `conferem / comCrc` (1 quando não há registro com CRC). */
+  proporcao: number;
+}
+
 export interface OpcoesParser {
   /** Tipo de REP conhecido pelo cadastro. Sem isso, é inferido (tipo 7 presente → "P"). */
   tipoRep?: TipoRep;
@@ -194,6 +216,13 @@ export interface OpcoesParser {
    * Aceita com ou sem pontuação; CPF com 11 dígitos, CNPJ com 14 caracteres (numérico ou alfanumérico).
    */
   empregadoresPermitidos?: readonly string[];
+  /**
+   * P8-R4-01: **caminho recomendado para a F2.** O CRC deste REP é o KERMIT (`true`) ou outro algoritmo (`false`),
+   * conforme o algoritmo gravado no cadastro do REP. Sempre tem prioridade sobre a heurística de proporção.
+   */
+  crcVerificavel?: boolean;
+  /** P8-R4-01: limites da heurística de proporção (sem `crcVerificavel`). Padrão `LIMITES_CRC_PADRAO` (90% / 1%). */
+  limitesCrc?: Partial<LimitesCrc>;
 }
 
 export interface ResultadoParser {
@@ -212,8 +241,14 @@ export interface ResultadoParser {
   /** Motivos que rejeitam o arquivo inteiro (vazio, encoding, leiaute, sem cabeçalho, empregador fora da empresa). */
   motivosRejeicao: CodigoInconsistencia[];
   /**
-   * P8-R3-01: true se algum registro com CRC confere; false se nenhum confere (CRC de outro algoritmo, com aviso
-   * `CRC_NAO_VERIFICAVEL` quando o CRC é aviso); null com `crc: "ignorar"` ou arquivo rejeitado antes da leitura.
+   * P8-R3-01 / P8-R4-01: o CRC decide ordem e cursor? Vem de `opcoes.crcVerificavel` quando informado; senão da
+   * proporção de CRC válido (≥ 90% → true; ≤ 1% → false com aviso `CRC_NAO_VERIFICAVEL`; entre os dois → false com
+   * aviso `CRC_INCONSISTENTE`). null com `crc: "ignorar"` (sem opção explícita) ou arquivo rejeitado antes da leitura.
    */
   crcVerificavel: boolean | null;
+  /**
+   * P8-R4-01: proporção de CRC válido medida no arquivo (mesmo quando `crcVerificavel` veio da opção). A F2 pode
+   * usá-la na 1ª importação para gravar o algoritmo do REP. null com `crc: "ignorar"` ou arquivo rejeitado.
+   */
+  crcConferencia: ConferenciaCrc | null;
 }

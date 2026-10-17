@@ -1,5 +1,5 @@
 import { crcVerificavelNosRegistros } from "./parser";
-import type { CodigoInconsistencia, ResultadoParser } from "./tipos";
+import type { CodigoInconsistencia, LimitesCrc, ResultadoParser } from "./tipos";
 
 /**
  * Decisão do pipeline de importação como função pura (plano v2, F1 e §3.3). Recebe o estado conhecido do REP
@@ -113,10 +113,13 @@ export interface OpcoesDecisao {
   /** Arquivo rejeitado (ex.: empregador fora da empresa, leiaute não suportado): tudo vai para quarentena. */
   rejeitarArquivo?: CodigoInconsistencia;
   /**
-   * P8-R3-01: o CRC do arquivo é verificável? `planejarImportacao` passa `parse.crcVerificavel`. Sem a opção, é
-   * deduzido das linhas pela mesma regra do parser (algum registro com CRC sem `CRC_INVALIDO`).
+   * P8-R3-01 / P8-R4-01: o CRC do arquivo é verificável? **Explícito sempre vence** (a F2 passa o algoritmo gravado
+   * por REP). Sem a opção, `planejarImportacao` usa `parse.crcVerificavel`, e `decidirImportacao` direto deduz das
+   * linhas pela mesma regra de proporção do parser (`limitesCrc`).
    */
   crcVerificavel?: boolean;
+  /** P8-R4-01: limites da proporção de CRC válido quando `crcVerificavel` não é informado. */
+  limitesCrc?: Partial<LimitesCrc>;
   /**
    * P8-R2-02: maior salto aceito entre um NSR novo e o último NSR confiável (do estado ou do próprio arquivo).
    * Acima disso o registro vai para quarentena com `NSR_SALTO_ANOMALO`. Padrão `LIMITE_SALTO_NSR_PADRAO` (10.000).
@@ -231,7 +234,7 @@ export function decidirImportacao<T extends LinhaParaDecisao>(estado: EstadoConh
   let cursor: number | null = ultimoNsr;
   let novoUltimoNsr: number | null = ultimoNsr;
   // P8-R3-01: mesma regra do parser; com CRC de outro algoritmo em todas as linhas, o CRC não decide a confiança
-  const crcVerificavel = opcoes.crcVerificavel ?? crcVerificavelNosRegistros(linhas);
+  const crcVerificavel = opcoes.crcVerificavel ?? crcVerificavelNosRegistros(linhas, opcoes.limitesCrc);
   const confiavel = (linha: T) => !crcVerificavel || !(linha.problemas ?? []).includes("CRC_INVALIDO");
   const avancar = (linha: T) => {
     if (!confiavel(linha)) return;
@@ -370,6 +373,8 @@ function coerenciaDoPreenchimento(estado: EstadoConhecido, lacuna: Lacuna, linha
  * (leiaute, encoding, empregador fora da empresa...), tudo vai para quarentena e nada é inserido.
  */
 export function planejarImportacao(estado: EstadoConhecido, parse: ResultadoParser, opcoes: Omit<OpcoesDecisao, "rejeitarArquivo"> = {}): DecisaoImportacao<ResultadoParser["registros"][number]> {
-  const base: OpcoesDecisao = parse.crcVerificavel === null ? { ...opcoes } : { ...opcoes, crcVerificavel: parse.crcVerificavel };
+  // P8-R4-01: a opção explícita da F2 vence; senão vale o que o parser decidiu
+  const crcVerificavel = opcoes.crcVerificavel ?? parse.crcVerificavel ?? undefined;
+  const base: OpcoesDecisao = crcVerificavel === undefined ? { ...opcoes } : { ...opcoes, crcVerificavel };
   return decidirImportacao(estado, parse.registros, parse.motivosRejeicao.length > 0 ? { ...base, rejeitarArquivo: parse.motivosRejeicao[0] } : base);
 }

@@ -117,7 +117,7 @@ describe("P8-R3-01: REP-C inteiro com CRC de outro algoritmo (INMETRO)", () => {
 
   it("com CRC KERMIT válido no arquivo, a regra da R2 continua: o registro com CRC inválido não avança o cursor", () => {
     const linhas = [cabecalho(), tipo3(1, dhMin(1), CPF_A), tipo3(2, dhMin(2), CPF_A), outroCrc(tipo3(3, dhMin(3), CPF_A)), trailer({ "3": 3 }), assinaturaRepC()];
-    const p = parse(linhas);
+    const p = parse(linhas, { crcVerificavel: true }); // arquivo pequeno: algoritmo do cadastro do REP (P8-R4-01)
     expect(p.crcVerificavel).toBe(true);
     expect(p.inconsistencias.some(i => i.codigo === "CRC_NAO_VERIFICAVEL")).toBe(false);
     expect(planejarImportacao(vazio, p).novoUltimoNsr).toBe(2);
@@ -147,7 +147,7 @@ describe("P8-R3-02: dois NSR corrompidos seguidos em REP-C (KERMIT válido nos d
 
   it("CRC inválido inserido (sem pico) não estende a análise de lacunas", () => {
     const linhas = [cabecalho(), tipo3(1, dhMin(1), CPF_A), tipo3(2, dhMin(2), CPF_A), outroCrc(tipo3(50, dhMin(3), CPF_A)), trailer({ "3": 3 }), assinaturaRepC()];
-    const d = planejarImportacao(vazio, parse(linhas));
+    const d = planejarImportacao(vazio, parse(linhas, { crcVerificavel: true }));
     expect(d.inserir.map(x => x.nsr)).toEqual([1, 2, 50]);
     expect(d.lacunas).toEqual([]);
     expect(d.novoUltimoNsr).toBe(2);

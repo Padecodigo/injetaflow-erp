@@ -8,7 +8,7 @@ import {
   TIPOS_COM_CRC, TIPOS_COM_NSR, VERSAO_LEIAUTE_671,
 } from "./leiaute671";
 import type {
-  Assinatura, Cabecalho, CodigoInconsistencia, Inconsistencia, LinhaInvalida, OpcoesParser, Registro, ResultadoParser, Severidade,
+  Assinatura, Cabecalho, CodigoInconsistencia, ConferenciaCrc, Inconsistencia, LimitesCrc, LinhaInvalida, OpcoesParser, Registro, ResultadoParser, Severidade,
   TipoRegistroComNsr, TipoRep, Trailer,
 } from "./tipos";
 
@@ -82,6 +82,7 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     inconsistencias,
     motivosRejeicao: [],
     crcVerificavel: null,
+    crcConferencia: null,
   };
   const rejeitar = (codigo: CodigoInconsistencia) => {
     if (!resultado.motivosRejeicao.includes(codigo)) resultado.motivosRejeicao.push(codigo);
@@ -373,13 +374,28 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     resultado.registros.push(registro);
   }
 
-  // P8-R3-01: CRC de outro algoritmo (nenhum CRC do arquivo confere): aviso explícito, e o CRC não decide ordem nem cursor
+  // P8-R3-01 / P8-R4-01: o CRC decide ordem e cursor só se o arquivo for verificável. A opção explícita
+  // `crcVerificavel` (algoritmo gravado por REP na F2) sempre vence a heurística de proporção.
   if (sevCrc !== "ignorar") {
-    const verificavel = crcVerificavelNosRegistros(resultado.registros);
-    resultado.crcVerificavel = verificavel;
-    if (!verificavel && sevCrc === "aviso") {
-      add("CRC_NAO_VERIFICAVEL", "aviso", "Nenhum registro deste arquivo confere com o CRC-16/KERMIT: o relógio provavelmente usa outro algoritmo (no REP-C vale o do INMETRO). O CRC não pôde ser verificado e não foi usado para decidir a ordem dos NSRs nem o cursor; a sequência, as lacunas e o salto continuam conferidos.");
+    const conf = avaliarCrcRegistros(resultado.registros, opcoes.limitesCrc);
+    resultado.crcConferencia = conf;
+    const pct = (x: number) => `${(x * 100).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}%`;
+    const resumo = `${conf.conferem} de ${conf.comCrc} registro(s) com CRC conferem com o CRC-16/KERMIT (${pct(conf.proporcao)})`;
+    if (opcoes.crcVerificavel !== undefined) {
+      resultado.crcVerificavel = opcoes.crcVerificavel;
+      if (!opcoes.crcVerificavel && sevCrc === "aviso") {
+        add("CRC_NAO_VERIFICAVEL", "aviso", `O cadastro do REP informa CRC de outro algoritmo (crcVerificavel: false): o CRC não foi usado para decidir a ordem dos NSRs nem o cursor; a sequência, as lacunas e o salto continuam conferidos. ${resumo}.`);
+      }
+    } else {
+      resultado.crcVerificavel = conf.verificavel;
+      if (sevCrc === "aviso" && conf.situacao === "nao-verificavel") {
+        add("CRC_NAO_VERIFICAVEL", "aviso", `${resumo}: o relógio provavelmente usa outro algoritmo (no REP-C vale o do INMETRO). O CRC não pôde ser verificado e não foi usado para decidir a ordem dos NSRs nem o cursor; a sequência, as lacunas e o salto continuam conferidos. Recomendado: registrar o algoritmo no cadastro do REP.`);
+      } else if (sevCrc === "aviso" && conf.situacao === "inconsistente") {
+        add("CRC_INCONSISTENTE", "aviso", `${resumo}, entre os limites de "verificável" e "outro algoritmo": arquivo com CRC inconsistente, tratado como não verificável (o CRC não decide ordem nem cursor). Confira o relógio e registre o algoritmo no cadastro do REP.`);
+      }
     }
+  } else if (opcoes.crcVerificavel !== undefined) {
+    resultado.crcVerificavel = opcoes.crcVerificavel;
   }
   conferirOrdemNsr(resultado.registros, add, resultado.crcVerificavel !== false);
 
@@ -484,19 +500,41 @@ function conferirOrdemNsr(registros: Registro[], add: Add, crcVerificavel: boole
   }
 }
 
+/** P8-R4-01: limites padrão da proporção de registros com CRC-16/KERMIT válido. */
+export const LIMITES_CRC_PADRAO: Readonly<LimitesCrc> = Object.freeze({ minimoVerificavel: 0.9, maximoNaoVerificavel: 0.01 });
+
 /**
- * P8-R3-01: o CRC dos registros pode ser usado como critério de confiança? Só quando algum registro com CRC
- * (tipos 2 a 5) confere. Se nenhum confere (REP-C com o CRC do INMETRO, de outro algoritmo), não dá para separar
- * linha boa de corrompida pelo CRC, então ele deixa de decidir a ordem e o cursor. Sem registros com CRC → true.
+ * P8-R3-01 / P8-R4-01: o CRC dos registros pode ser usado como critério de confiança? Decide pela **proporção** de
+ * registros com CRC (tipos 2 a 5) que conferem com o KERMIT, não pela existência de um que confira (1 linha em
+ * 65.536 confere por acaso num CRC de outro algoritmo):
+ * - proporção ≥ `minimoVerificavel` (padrão 90%) → "verificavel": vale a regra do CRC (inválido não avança cursor);
+ * - proporção ≤ `maximoNaoVerificavel` (padrão 1%, cobre as coincidências) → "nao-verificavel" (CRC de outro
+ *   algoritmo, ex.: INMETRO no REP-C);
+ * - entre os dois → "inconsistente", tratado como não verificável.
+ * Sem registros com CRC → "sem-crc" (verificável, não há o que decidir).
  */
-export function crcVerificavelNosRegistros(registros: readonly { tipo?: string; problemas?: readonly CodigoInconsistencia[] }[]): boolean {
+export function avaliarCrcRegistros(
+  registros: readonly { tipo?: string; problemas?: readonly CodigoInconsistencia[] }[],
+  limites: Partial<LimitesCrc> = {},
+): ConferenciaCrc {
+  const minimo = limites.minimoVerificavel ?? LIMITES_CRC_PADRAO.minimoVerificavel;
+  const maximo = limites.maximoNaoVerificavel ?? LIMITES_CRC_PADRAO.maximoNaoVerificavel;
   let comCrc = 0;
+  let conferem = 0;
   for (const r of registros) {
     if (r.tipo !== undefined && !TIPOS_COM_CRC.has(r.tipo)) continue;
     comCrc++;
-    if (!(r.problemas ?? []).includes("CRC_INVALIDO")) return true;
+    if (!(r.problemas ?? []).includes("CRC_INVALIDO")) conferem++;
   }
-  return comCrc === 0;
+  if (comCrc === 0) return { situacao: "sem-crc", verificavel: true, comCrc, conferem, proporcao: 1 };
+  const proporcao = conferem / comCrc;
+  const situacao = proporcao >= minimo ? "verificavel" : proporcao <= maximo ? "nao-verificavel" : "inconsistente";
+  return { situacao, verificavel: situacao === "verificavel", comCrc, conferem, proporcao };
+}
+
+/** Atalho de `avaliarCrcRegistros(...).verificavel`. */
+export function crcVerificavelNosRegistros(registros: readonly { tipo?: string; problemas?: readonly CodigoInconsistencia[] }[], limites: Partial<LimitesCrc> = {}): boolean {
+  return avaliarCrcRegistros(registros, limites).verificavel;
 }
 
 function idEmpregadorValido(tpId: string, id: string): boolean {

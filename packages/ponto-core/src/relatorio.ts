@@ -89,7 +89,7 @@ export function inconsistenciasDaImportacao<T extends LinhaParaDecisao & { numer
     for (const l of decisao.lacunas) {
       lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: l.de, mensagem: l.de === l.ate ? `NSR ${l.de} ausente; colete de novo a partir dele.` : `NSRs ${l.de} a ${l.ate} ausentes; colete de novo a partir do ${l.de}.` });
     }
-    if (decisao.crcVerificavel === false && !parse.inconsistencias.some(i => i.codigo === "CRC_NAO_VERIFICAVEL")) {
+    if (decisao.crcVerificavel === false && !parse.inconsistencias.some(i => i.codigo === "CRC_NAO_VERIFICAVEL" || i.codigo === "CRC_INCONSISTENTE")) {
       lista.push({ codigo: "CRC_NAO_VERIFICAVEL", severidade: "aviso", mensagem: "Nenhum registro deste arquivo confere com o CRC-16/KERMIT (CRC de outro algoritmo). O CRC não foi usado para decidir o cursor; lacunas, reset e salto continuam conferidos." });
     }
     if (decisao.lacunasTruncadasEm !== undefined) {

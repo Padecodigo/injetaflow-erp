@@ -4,7 +4,7 @@
  * relatório de inconsistências, chaves de idempotência e decisão do pipeline de importação.
  */
 export * from "./tipos";
-export { parseAfd, normalizarEmpregador, instanteSequencial, crcVerificavelNosRegistros } from "./parser";
+export { parseAfd, normalizarEmpregador, instanteSequencial, crcVerificavelNosRegistros, avaliarCrcRegistros, LIMITES_CRC_PADRAO } from "./parser";
 export { crc16Kermit, crc16KermitHex } from "./crc16";
 export { calcularHashTipo7 } from "./cadeia-hash";
 export { sha256Hex } from "./hash";

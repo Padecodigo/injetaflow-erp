@@ -128,7 +128,8 @@ describe("P8-R2-02: NSR corrompido não envenena o cursor nem derruba o vizinho 
   it("registro com CRC inválido em REP-C (aviso) pode entrar, mas nunca conta como último NSR", () => {
     const l3 = tipo3(3, "2026-10-01T09:00:00-0300", CPF_A);
     const ruim = l3.slice(0, -4) + (l3.slice(-4) === "0000" ? "1111" : "0000");
-    const p = parse([cabecalho(), tipo3(1, "2026-10-01T07:00:00-0300", CPF_A), tipo3(2, "2026-10-01T08:00:00-0300", CPF_A), ruim, trailer({ "3": 3 }), assinaturaRepC()]);
+    // arquivo pequeno (2 de 3 conferem): o algoritmo do REP vem do cadastro (crcVerificavel: true, P8-R4-01)
+    const p = parse([cabecalho(), tipo3(1, "2026-10-01T07:00:00-0300", CPF_A), tipo3(2, "2026-10-01T08:00:00-0300", CPF_A), ruim, trailer({ "3": 3 }), assinaturaRepC()], { crcVerificavel: true });
     expect(p.inconsistencias).toMatchObject([{ codigo: "CRC_INVALIDO", severidade: "aviso", nsr: 3 }]);
     const d = planejarImportacao(vazio, p);
     expect(d.inserir.map(x => x.nsr)).toEqual([1, 2, 3]);

@@ -84,7 +84,8 @@ describe("parseAfd: cada defeito gera a inconsistência esperada", () => {
     const linhas = linhasRepC();
     const adulterada = linhas[4].slice(0, -4) + (linhas[4].endsWith("0000") ? "FFFF" : "0000");
     const r = parse(trocar(linhas, 4, adulterada));
-    expect(r.inconsistencias).toMatchObject([{ codigo: "CRC_INVALIDO", severidade: "aviso", nsr: 4, numeroLinha: 5 }]);
+    // 8 de 9 registros com CRC conferem (88,9%, abaixo dos 90%): também sai CRC_INCONSISTENTE (P8-R4-01)
+    expect(r.inconsistencias).toMatchObject([{ codigo: "CRC_INVALIDO", severidade: "aviso", nsr: 4, numeroLinha: 5 }, { codigo: "CRC_INCONSISTENTE", severidade: "aviso" }]);
     expect(r.registros.find(x => x.nsr === 4)!.problemas).toEqual(["CRC_INVALIDO"]);
     // REP-A: CRC vira erro (a assinatura não literal da fixture de REP-C também é apontada)
     const comoRepA = parse(trocar(linhas, 4, adulterada), { tipoRep: "A" }).inconsistencias;
@@ -93,7 +94,9 @@ describe("parseAfd: cada defeito gera a inconsistência esperada", () => {
     expect(parse(trocar(linhas, 4, adulterada), { crc: "ignorar" }).inconsistencias).toEqual([]);
     // conteúdo alterado com CRC antigo também é pego
     const conteudo = tipo3(4, "2026-10-01T07:59:00-0300", CPF_A).slice(0, -4) + linhas[4].slice(-4);
-    expect(codigos(parse(trocar(linhas, 4, conteudo)))).toEqual(["CRC_INVALIDO"]);
+    expect(codigos(parse(trocar(linhas, 4, conteudo)))).toEqual(["CRC_INVALIDO", "CRC_INCONSISTENTE"]);
+    // com o algoritmo do REP informado (caminho da F2), só o CRC da linha
+    expect(codigos(parse(trocar(linhas, 4, conteudo), { crcVerificavel: true }))).toEqual(["CRC_INVALIDO"]);
   });
 
   it("CRC do cabeçalho adulterado → CRC_INVALIDO", () => {
