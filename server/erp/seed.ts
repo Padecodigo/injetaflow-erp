@@ -8,7 +8,15 @@ import { registrarPonto } from "./rh";
 import { createUser } from "./users";
 import { DEFAULT_EMPRESA_ID } from "./store";
 
-export type SeedResult = { adminCreated: boolean; adminEmail?: string; generatedPassword?: string; demoSeeded: boolean };
+export type SeedResult = { adminCreated: boolean; adminEmail?: string; generatedPassword?: string; demoSeeded: boolean; demoUsers?: string[]; generatedDemoPassword?: string };
+
+/** Usuários de DEMONSTRAÇÃO (um por perfil) para testar permissões sem cadastrar ninguém. */
+export const DEMO_USERS = [
+  { nome: "Gestora Demonstração", email: "gestora.demo@wamovale.local", perfil: "Gestor", setor: "Administrativo", matricula: "DEMO-GES" },
+  { nome: "Supervisor Demonstração", email: "supervisor.demo@wamovale.local", perfil: "Supervisor", setor: "Produção", matricula: "DEMO-SUP" },
+  { nome: "Operador Demonstração", email: "operador.demo@wamovale.local", perfil: "Operador", setor: "Produção", matricula: "DEMO-OPE" },
+  { nome: "Consulta Demonstração", email: "consulta.demo@wamovale.local", perfil: "Consulta", setor: "Comercial", matricula: "DEMO-CON" },
+] as const;
 
 /**
  * Cria o administrador inicial (se a empresa ainda não tiver usuários) e,
@@ -17,7 +25,9 @@ export type SeedResult = { adminCreated: boolean; adminEmail?: string; generated
  * - E-mail: INJETAFLOW_ADMIN_EMAIL (padrão admin@wamovale.local)
  * - Senha: INJETAFLOW_ADMIN_PASSWORD; se ausente, é gerada e mostrada apenas
  *   no console local, uma única vez. Nunca é gravada em arquivo.
- * - Demonstração: INJETAFLOW_SEED_DEMO=false desliga.
+ * - Demonstração: INJETAFLOW_SEED_DEMO=false desliga. Junto com os dados de exemplo são criados
+ *   usuários demo (DEMO_USERS) com a senha INJETAFLOW_DEMO_PASSWORD ou uma senha gerada e
+ *   mostrada só no console.
  */
 export async function ensureSeed(repo: DataRepository, opts: { empresaId?: string; log?: (message: string) => void; env?: NodeJS.ProcessEnv } = {}): Promise<SeedResult> {
   const env = opts.env ?? process.env;
@@ -70,6 +80,26 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
         id: "seed", empresaId, nome: "Carga de demonstração", email: "", setor: "Administrativo", perfil: "Administrador", matricula: "DEMO", permissoes: {}, status: "Ativo",
       };
       await seedDemo(repo, { ...actor, nome: "Carga de demonstração" });
+      if (result.adminCreated) {
+        const fromEnvDemo = env.INJETAFLOW_DEMO_PASSWORD;
+        if (fromEnvDemo && fromEnvDemo.length < 8) throw new Error("INJETAFLOW_DEMO_PASSWORD precisa ter pelo menos 8 caracteres.");
+        const demoSenha = fromEnvDemo || generatePassword(16);
+        for (const u of DEMO_USERS) {
+          await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" });
+        }
+        result.demoUsers = DEMO_USERS.map(u => u.email);
+        if (!fromEnvDemo) result.generatedDemoPassword = demoSenha;
+        log(
+          [
+            "",
+            "------------- InjetaFlow: usuários de DEMONSTRAÇÃO (um por perfil) -------------",
+            ...DEMO_USERS.map(u => `  ${u.perfil.padEnd(10)} ${u.email}`),
+            fromEnvDemo ? "  Senha: a definida em INJETAFLOW_DEMO_PASSWORD." : `  Senha (mostrada só agora): ${demoSenha}`,
+            "--------------------------------------------------------------------------------",
+            "",
+          ].join("\n")
+        );
+      }
       result.demoSeeded = true;
       log("[InjetaFlow] Dados de DEMONSTRAÇÃO carregados (marcados como demo). Use INJETAFLOW_SEED_DEMO=false para não carregar.");
     }

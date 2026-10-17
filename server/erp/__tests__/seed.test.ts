@@ -53,3 +53,26 @@ describe("seed do administrador inicial", () => {
     expect(fs.existsSync(path.join(root, "lib/demo-auth.ts"))).toBe(false);
   });
 });
+
+describe("seed de usuários de demonstração (pnpm dev sem variáveis)", () => {
+  it("cria um usuário demo por perfil com senha gerada mostrada só no console", async () => {
+    const repo = new MemoryRepository();
+    const logs: string[] = [];
+    const result = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: {} });
+    expect(result.demoUsers).toHaveLength(4);
+    expect(result.generatedDemoPassword).toHaveLength(16);
+    expect(logs.join("\n")).toContain(result.generatedDemoPassword!);
+    const operador = await login(repo, "operador.demo@wamovale.local", result.generatedDemoPassword!);
+    const me = await operador.caller.auth.me();
+    expect(me?.perfil).toBe("Operador");
+    await expect(operador.caller.usuarios.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("usa INJETAFLOW_DEMO_PASSWORD sem imprimi-la", async () => {
+    const repo = new MemoryRepository();
+    const logs: string[] = [];
+    await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { INJETAFLOW_ADMIN_PASSWORD: "Senha-Admin-Env-1", INJETAFLOW_DEMO_PASSWORD: "Senha-Demo-Env-1" } });
+    expect(logs.join("\n")).not.toContain("Senha-Demo-Env-1");
+    await login(repo, "consulta.demo@wamovale.local", "Senha-Demo-Env-1");
+  });
+});
