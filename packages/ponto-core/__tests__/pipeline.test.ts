@@ -10,7 +10,7 @@ const estado = (nsrs: number[], extra: Record<number, string> = {}): EstadoConhe
 describe("decidirImportacao (função pura do pipeline)", () => {
   it("primeira importação insere tudo, sem lacuna", () => {
     const d = decidirImportacao(estado([]), [l(1), l(2), l(3)]);
-    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 3 });
+    expect(d).toEqual({ inserir: [l(1), l(2), l(3)], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 3, crcVerificavel: true });
   });
 
   it("reimportação do mesmo conteúdo gera só duplicadas", () => {
@@ -92,6 +92,6 @@ describe("decidirImportacao (função pura do pipeline)", () => {
   });
 
   it("arquivo vazio não decide nada", () => {
-    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 1 });
+    expect(decidirImportacao(estado([1]), [])).toEqual({ inserir: [], duplicadas: [], conflitos: [], quarentena: [], lacunasPreenchidas: [], lacunas: [], bloqueada: false, retidasPorBloqueio: [], novoUltimoNsr: 1, crcVerificavel: true });
   });
 });

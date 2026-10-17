@@ -1,3 +1,4 @@
+import { crcVerificavelNosRegistros } from "./parser";
 import type { CodigoInconsistencia, ResultadoParser } from "./tipos";
 
 /**
@@ -45,6 +46,8 @@ export interface LinhaParaDecisao {
   problemas?: readonly CodigoInconsistencia[];
   /** Instante (ms UTC) do registro na sequência do REP (o parser preenche). Necessário para preencher lacuna. */
   instante?: number | null;
+  /** Tipo do registro (o parser preenche). Só os tipos 2 a 5 têm CRC; sem tipo, a linha conta como tendo CRC. */
+  tipo?: string;
 }
 
 export interface Conflito<T extends LinhaParaDecisao> {
@@ -89,9 +92,15 @@ export interface DecisaoImportacao<T extends LinhaParaDecisao> {
   retidasPorBloqueio: T[];
   /**
    * P8-R2-02: cursor a persistir depois de gravar `inserir`: maior entre `estado.ultimoNsr` e os NSRs inseridos sem
-   * `CRC_INVALIDO`. Registro com CRC inválido ou em quarentena nunca avança o cursor.
+   * `CRC_INVALIDO`. Registro com CRC inválido ou em quarentena nunca avança o cursor (salvo CRC não verificável).
    */
   novoUltimoNsr: number | null;
+  /**
+   * P8-R3-01: false quando nenhum registro com CRC do arquivo confere (CRC de outro algoritmo, como o do INMETRO no
+   * REP-C). Aí o CRC não decide a confiança: o cursor avança normalmente e lacuna, reset e salto continuam valendo.
+   * O relatório traz o aviso `CRC_NAO_VERIFICAVEL`.
+   */
+  crcVerificavel: boolean;
 }
 
 /** Padrão de `limiteSaltoNsr` (P8-R2-02). */
@@ -103,6 +112,11 @@ const LIMITE_ANALISE_LACUNAS = 1_000_000;
 export interface OpcoesDecisao {
   /** Arquivo rejeitado (ex.: empregador fora da empresa, leiaute não suportado): tudo vai para quarentena. */
   rejeitarArquivo?: CodigoInconsistencia;
+  /**
+   * P8-R3-01: o CRC do arquivo é verificável? `planejarImportacao` passa `parse.crcVerificavel`. Sem a opção, é
+   * deduzido das linhas pela mesma regra do parser (algum registro com CRC sem `CRC_INVALIDO`).
+   */
+  crcVerificavel?: boolean;
   /**
    * P8-R2-02: maior salto aceito entre um NSR novo e o último NSR confiável (do estado ou do próprio arquivo).
    * Acima disso o registro vai para quarentena com `NSR_SALTO_ANOMALO`. Padrão `LIMITE_SALTO_NSR_PADRAO` (10.000).
@@ -191,7 +205,7 @@ export function decidirImportacao<T extends LinhaParaDecisao>(estado: EstadoConh
 
   if (opcoes.rejeitarArquivo) {
     for (const linha of linhas) quarentena.push({ registro: linha, motivos: [opcoes.rejeitarArquivo] });
-    return { inserir, duplicadas, conflitos, quarentena, lacunasPreenchidas, lacunas, bloqueada: true, retidasPorBloqueio: [], novoUltimoNsr: estado.ultimoNsr };
+    return { inserir, duplicadas, conflitos, quarentena, lacunasPreenchidas, lacunas, bloqueada: true, retidasPorBloqueio: [], novoUltimoNsr: estado.ultimoNsr, crcVerificavel: opcoes.crcVerificavel ?? true };
   }
 
   // 1ª passada: hashes por NSR dentro do arquivo, menor e maior NSR (laço, sem spread)
@@ -216,7 +230,9 @@ export function decidirImportacao<T extends LinhaParaDecisao>(estado: EstadoConh
   // cursor interno (P8-R2-02): último NSR confiável visto (estado ou registro aceito sem CRC inválido)
   let cursor: number | null = ultimoNsr;
   let novoUltimoNsr: number | null = ultimoNsr;
-  const confiavel = (linha: T) => !(linha.problemas ?? []).includes("CRC_INVALIDO");
+  // P8-R3-01: mesma regra do parser; com CRC de outro algoritmo em todas as linhas, o CRC não decide a confiança
+  const crcVerificavel = opcoes.crcVerificavel ?? crcVerificavelNosRegistros(linhas);
+  const confiavel = (linha: T) => !crcVerificavel || !(linha.problemas ?? []).includes("CRC_INVALIDO");
   const avancar = (linha: T) => {
     if (!confiavel(linha)) return;
     if (cursor === null || linha.nsr > cursor) cursor = linha.nsr;
@@ -281,7 +297,8 @@ export function decidirImportacao<T extends LinhaParaDecisao>(estado: EstadoConh
   if (linhas.length > 0) {
     // limite superior da análise: maior NSR confiável (aceito, duplicado ou em conflito); quarentena não abre lacuna falsa
     let maiorConfiavel = Number.NEGATIVE_INFINITY;
-    for (const x of inserir) if (x.nsr > maiorConfiavel) maiorConfiavel = x.nsr;
+    // P8-R3-02: registro inserido com CRC inválido (CRC verificável) não estende a análise de lacunas
+    for (const x of inserir) if (confiavel(x) && x.nsr > maiorConfiavel) maiorConfiavel = x.nsr;
     for (const x of duplicadas) if (x.nsr > maiorConfiavel) maiorConfiavel = x.nsr;
     for (const c of conflitos) if (c.registro.nsr > maiorConfiavel) maiorConfiavel = c.registro.nsr;
     let aberta: number | null = null;
@@ -325,6 +342,7 @@ export function decidirImportacao<T extends LinhaParaDecisao>(estado: EstadoConh
     bloqueada,
     retidasPorBloqueio: bloqueada ? inserir : [],
     novoUltimoNsr: bloqueada ? ultimoNsr : novoUltimoNsr,
+    crcVerificavel,
   };
 }
 
@@ -352,5 +370,6 @@ function coerenciaDoPreenchimento(estado: EstadoConhecido, lacuna: Lacuna, linha
  * (leiaute, encoding, empregador fora da empresa...), tudo vai para quarentena e nada é inserido.
  */
 export function planejarImportacao(estado: EstadoConhecido, parse: ResultadoParser, opcoes: Omit<OpcoesDecisao, "rejeitarArquivo"> = {}): DecisaoImportacao<ResultadoParser["registros"][number]> {
-  return decidirImportacao(estado, parse.registros, parse.motivosRejeicao.length > 0 ? { ...opcoes, rejeitarArquivo: parse.motivosRejeicao[0] } : opcoes);
+  const base: OpcoesDecisao = parse.crcVerificavel === null ? { ...opcoes } : { ...opcoes, crcVerificavel: parse.crcVerificavel };
+  return decidirImportacao(estado, parse.registros, parse.motivosRejeicao.length > 0 ? { ...base, rejeitarArquivo: parse.motivosRejeicao[0] } : base);
 }

@@ -74,8 +74,9 @@ A F2 carrega o estado, chama o core e grava o resultado. O core não acessa banc
    ou arquivo rejeitado. Nada é inserido; `retidasPorBloqueio` guarda o que entraria.
 8. **Relatório**: `relatorioImportacao(parse, decisao)` e `inconsistenciasDaImportacao` (tela e CSV, sem CPF).
 9. **Execução em segundo plano** (P8-R2-05): medido em 300 mil linhas, o parse leva ~5 s (REP-C, 15,6 MB) a ~9 s
-   (REP-P, 41,7 MB) e retém ~225 MB de heap no REP-C (após o ganho desta rodada: data e hora compartilhada e array vazio
-   compartilhado; antes ~310 MB). Projeção: ~0,8 GB para 1 milhão de linhas. A F2 deve rodar a importação em
+   (REP-P, 41,7 MB) e retém ~225 MB de heap no REP-C quando as datas e horas se repetem (data e hora compartilhada e
+   array vazio compartilhado; antes ~310 MB). Com data e hora distinta em cada registro o ganho some (~290 MB) e o parse
+   fica ~25% mais lento por causa do cache (ver backlog, issue #5). Projeção: ~0,8 GB para 1 milhão de linhas. A F2 deve rodar a importação em
    **job/worker em segundo plano**, nunca dentro da requisição HTTP, com **limite de tamanho de arquivo** (sugestão:
    50 MB) e um job por REP por vez. Parse em streaming e registros mais enxutos ficam para depois da F2.
 
@@ -95,6 +96,14 @@ A F2 carrega o estado, chama o core e grava o resultado. O core não acessa banc
   seria rejeitado como UTF-8. É raro em nomes próprios (exige pares de acentuados específicos em todas as ocorrências);
   se acontecer, o RH vê a mensagem `ENCODING_UTF8` e o arquivo pode ser reavaliado. Alternativas para a F2, se
   surgir caso real: rebaixar para aviso ou exigir proporção mínima de sequências multibyte.
-- **CRC de REP-C e cursor (P8-R2-02):** com CRC como aviso (REP-C), o registro com CRC inválido pode entrar, mas
-  nunca avança o cursor (`novoUltimoNsr`) nem a conferência de ordem. Se nenhum CRC do arquivo confere (algoritmo
-  do fabricante diferente), o CRC deixa de ser critério de ordem; nesse caso configure `crc: "ignorar"` para o REP.
+- **CRC de REP-C e cursor (P8-R2-02, P8-R3-01):** com CRC como aviso (REP-C), o registro com CRC inválido pode
+  entrar, mas nunca avança o cursor (`novoUltimoNsr`) nem a conferência de ordem, e não estende a análise de lacunas.
+  Um registro com CRC inválido acima do próximo registro com CRC válido é marcado `NSR_FORA_DE_ORDEM` (P8-R3-02).
+  **CRC de outro algoritmo:** se nenhum registro com CRC do arquivo confere (caso esperado num REP-C com o CRC do
+  INMETRO), `parse.crcVerificavel` é `false`, sai o aviso de arquivo `CRC_NAO_VERIFICAVEL` e o CRC deixa de decidir
+  ordem e cursor, no parser e no pipeline (a mesma regra, `crcVerificavelNosRegistros`). O cursor avança normalmente
+  e lacuna, `ESTADO_INCOMPLETO`, `NSR_ABAIXO_DO_CURSOR`, retrocesso e salto continuam valendo. `planejarImportacao`
+  repassa `crcVerificavel`; `decidirImportacao` direto deduz pela mesma regra (opção `crcVerificavel` para forçar).
+  Com `crc: "ignorar"` não há conferência nem aviso (`crcVerificavel: null`).
+- **Somente leitura (P8-R3-06):** `problemas`, `errosGraves` (`readonly CodigoInconsistencia[]`) e os campos de
+  `DataHoraAfd` são readonly no tipo; em tempo de execução são compartilhados e congelados. Para acrescentar, copie.

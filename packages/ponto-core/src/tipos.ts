@@ -27,6 +27,8 @@ export type CodigoInconsistencia =
   | "CPF_INVALIDO"
   | "CNPJ_CPF_INVALIDO"
   | "CRC_INVALIDO"
+  // P8-R3-01: nenhum CRC do arquivo confere (CRC de outro algoritmo, ex.: INMETRO no REP-C)
+  | "CRC_NAO_VERIFICAVEL"
   | "HASH_CADEIA_INVALIDA"
   | "CADEIA_NAO_VERIFICAVEL"
   | "EMPREGADOR_FORA_DA_EMPRESA"
@@ -96,9 +98,9 @@ interface RegistroBase extends LinhaBase {
   /** P8-R2-01: instante (ms UTC) que ordena o registro na sequência do REP (`instanteSequencial`); null se a DH é inválida. */
   instante: number | null;
   /** Códigos das inconsistências que atingem este registro (o registro continua sendo lido). */
-  problemas: CodigoInconsistencia[];
+  problemas: readonly CodigoInconsistencia[];
   /** Subconjunto de `problemas` com severidade "erro": o pipeline põe o registro em quarentena (P8-01). */
-  errosGraves: CodigoInconsistencia[];
+  errosGraves: readonly CodigoInconsistencia[];
 }
 
 export interface RegistroEmpresa extends RegistroBase {
@@ -209,4 +211,9 @@ export interface ResultadoParser {
   inconsistencias: Inconsistencia[];
   /** Motivos que rejeitam o arquivo inteiro (vazio, encoding, leiaute, sem cabeçalho, empregador fora da empresa). */
   motivosRejeicao: CodigoInconsistencia[];
+  /**
+   * P8-R3-01: true se algum registro com CRC confere; false se nenhum confere (CRC de outro algoritmo, com aviso
+   * `CRC_NAO_VERIFICAVEL` quando o CRC é aviso); null com `crc: "ignorar"` ou arquivo rejeitado antes da leitura.
+   */
+  crcVerificavel: boolean | null;
 }

@@ -50,7 +50,7 @@ export function relatorioImportacao<T extends LinhaParaDecisao>(parse: Resultado
   else if (decisao?.bloqueada) status = "BLOQUEADA";
   else if (decisao && decisao.inserir.length === 0 && decisao.conflitos.length === 0 && decisao.quarentena.length === 0 && erros === 0) status = "SEM_NOVIDADES";
   else if (erros > 0 || (decisao?.conflitos.length ?? 0) > 0 || (quarentena ?? 0) > 0) status = "COM_ERROS";
-  else if (avisos > 0 || (nsrsEmLacuna ?? 0) > 0 || (lacunasPreenchidas ?? 0) > 0 || decisao?.lacunasTruncadasEm !== undefined) status = "COM_AVISOS";
+  else if (avisos > 0 || (nsrsEmLacuna ?? 0) > 0 || (lacunasPreenchidas ?? 0) > 0 || decisao?.lacunasTruncadasEm !== undefined || decisao?.crcVerificavel === false) status = "COM_AVISOS";
   else status = "OK";
   return {
     status,
@@ -88,6 +88,9 @@ export function inconsistenciasDaImportacao<T extends LinhaParaDecisao & { numer
     }
     for (const l of decisao.lacunas) {
       lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: l.de, mensagem: l.de === l.ate ? `NSR ${l.de} ausente; colete de novo a partir dele.` : `NSRs ${l.de} a ${l.ate} ausentes; colete de novo a partir do ${l.de}.` });
+    }
+    if (decisao.crcVerificavel === false && !parse.inconsistencias.some(i => i.codigo === "CRC_NAO_VERIFICAVEL")) {
+      lista.push({ codigo: "CRC_NAO_VERIFICAVEL", severidade: "aviso", mensagem: "Nenhum registro deste arquivo confere com o CRC-16/KERMIT (CRC de outro algoritmo). O CRC não foi usado para decidir o cursor; lacunas, reset e salto continuam conferidos." });
     }
     if (decisao.lacunasTruncadasEm !== undefined) {
       lista.push({ codigo: "NSR_LACUNA", severidade: "aviso", nsr: decisao.lacunasTruncadasEm, mensagem: `A análise de lacunas parou no NSR ${decisao.lacunasTruncadasEm - 1} (limite de 1 milhão de NSRs por importação); pode haver mais lacunas a partir do ${decisao.lacunasTruncadasEm}.` });

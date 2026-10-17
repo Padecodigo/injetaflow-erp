@@ -81,6 +81,7 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     contagemPorTipo: contagemZerada(),
     inconsistencias,
     motivosRejeicao: [],
+    crcVerificavel: null,
   };
   const rejeitar = (codigo: CodigoInconsistencia) => {
     if (!resultado.motivosRejeicao.includes(codigo)) resultado.motivosRejeicao.push(codigo);
@@ -372,7 +373,15 @@ export function parseAfd(bytes: Uint8Array, opcoes: OpcoesParser = {}): Resultad
     resultado.registros.push(registro);
   }
 
-  conferirOrdemNsr(resultado.registros, add);
+  // P8-R3-01: CRC de outro algoritmo (nenhum CRC do arquivo confere): aviso explícito, e o CRC não decide ordem nem cursor
+  if (sevCrc !== "ignorar") {
+    const verificavel = crcVerificavelNosRegistros(resultado.registros);
+    resultado.crcVerificavel = verificavel;
+    if (!verificavel && sevCrc === "aviso") {
+      add("CRC_NAO_VERIFICAVEL", "aviso", "Nenhum registro deste arquivo confere com o CRC-16/KERMIT: o relógio provavelmente usa outro algoritmo (no REP-C vale o do INMETRO). O CRC não pôde ser verificado e não foi usado para decidir a ordem dos NSRs nem o cursor; a sequência, as lacunas e o salto continuam conferidos.");
+    }
+  }
+  conferirOrdemNsr(resultado.registros, add, resultado.crcVerificavel !== false);
 
   // Estrutura do arquivo
   if (!resultado.cabecalho && !resultado.invalidas.some(i => i.tipo === "1")) add("CABECALHO_AUSENTE", "erro", "Arquivo sem cabeçalho (registro tipo 1).");
@@ -425,24 +434,30 @@ export function instanteSequencial(r: Registro): number | null {
 }
 
 /**
- * Ordem dos NSRs (P8-R2-02). Regras:
+ * Ordem dos NSRs (P8-R2-02, P8-R3-01/02). Regras:
  * - o cursor (último NSR confiável) só avança por registro com CRC válido; com CRC inválido (inclusive REP-C, em
  *   que o CRC é aviso) o registro não avança o cursor. Se nenhum registro com CRC do arquivo confere (algoritmo do
- *   relógio diferente), o CRC não é usado como critério;
+ *   relógio diferente, `crcVerificavel` false), o CRC não é usado como critério;
+ * - registro com CRC inválido acima do próximo registro confiável → `NSR_FORA_DE_ORDEM` nele (P8-R3-02);
  * - NSR abaixo do cursor → `NSR_FORA_DE_ORDEM` nele;
  * - "pico": NSR maior que o seguinte, com o seguinte acima do cursor e o depois do seguinte também abaixo do pico
  *   (ex.: 5, 900000006, 7, 8) → o pico é o registro fora de ordem, não o vizinho legítimo;
  * - NSR repetido já foi marcado na leitura e não entra nesta conferência.
  */
-function conferirOrdemNsr(registros: Registro[], add: Add) {
+function conferirOrdemNsr(registros: Registro[], add: Add, crcVerificavel: boolean) {
   const marcar = (r: Registro, mensagem: string) => {
     add("NSR_FORA_DE_ORDEM", "erro", mensagem, { numeroLinha: r.numeroLinha, nsr: r.nsr });
     if (!r.problemas.includes("NSR_FORA_DE_ORDEM")) r.problemas = [...r.problemas, "NSR_FORA_DE_ORDEM"];
     if (!r.errosGraves.includes("NSR_FORA_DE_ORDEM")) r.errosGraves = [...r.errosGraves, "NSR_FORA_DE_ORDEM"];
   };
-  const comCrc = registros.filter(r => TIPOS_COM_CRC.has(r.tipo));
-  const crcConfiavel = comCrc.some(r => !r.problemas.includes("CRC_INVALIDO"));
   const candidatos = registros.filter(r => !r.problemas.includes("NSR_DUPLICADO_NO_ARQUIVO"));
+  const crcRuim = (r: Registro) => crcVerificavel && r.problemas.includes("CRC_INVALIDO");
+  // P8-R3-02: índice do próximo registro confiável (CRC válido ou sem CRC), calculado de trás para frente
+  const proximoConfiavel = new Array<number>(candidatos.length + 1).fill(-1);
+  for (let i = candidatos.length - 1; i >= 0; i--) {
+    const k = i + 1;
+    proximoConfiavel[i] = k < candidatos.length && !crcRuim(candidatos[k]) ? k : proximoConfiavel[k];
+  }
   let cursor: number | null = null;
   for (let i = 0; i < candidatos.length; i++) {
     const r = candidatos[i];
@@ -456,9 +471,32 @@ function conferirOrdemNsr(registros: Registro[], add: Add) {
       marcar(r, `NSR ${r.nsr} fora da sequência: é maior que os seguintes (${seguinte.nsr}). Possível NSR corrompido; o registro não avança a sequência.`);
       continue;
     }
-    const crcRuim = r.problemas.includes("CRC_INVALIDO");
-    if (!crcRuim || !crcConfiavel) cursor = r.nsr;
+    if (crcRuim(r)) {
+      // P8-R3-02: CRC inválido acima do próximo registro confiável (ex.: 5, 906, 907, 8) também é pico
+      const j = proximoConfiavel[i];
+      const prox = j >= 0 ? candidatos[j] : undefined;
+      if (prox && prox.nsr < r.nsr && (cursor === null || prox.nsr > cursor)) {
+        marcar(r, `NSR ${r.nsr} com CRC inválido e maior que o próximo registro com CRC válido (${prox.nsr}). Possível NSR corrompido; o registro não avança a sequência.`);
+      }
+      continue; // CRC inválido nunca avança o cursor
+    }
+    cursor = r.nsr;
   }
+}
+
+/**
+ * P8-R3-01: o CRC dos registros pode ser usado como critério de confiança? Só quando algum registro com CRC
+ * (tipos 2 a 5) confere. Se nenhum confere (REP-C com o CRC do INMETRO, de outro algoritmo), não dá para separar
+ * linha boa de corrompida pelo CRC, então ele deixa de decidir a ordem e o cursor. Sem registros com CRC → true.
+ */
+export function crcVerificavelNosRegistros(registros: readonly { tipo?: string; problemas?: readonly CodigoInconsistencia[] }[]): boolean {
+  let comCrc = 0;
+  for (const r of registros) {
+    if (r.tipo !== undefined && !TIPOS_COM_CRC.has(r.tipo)) continue;
+    comCrc++;
+    if (!(r.problemas ?? []).includes("CRC_INVALIDO")) return true;
+  }
+  return comCrc === 0;
 }
 
 function idEmpregadorValido(tpId: string, id: string): boolean {

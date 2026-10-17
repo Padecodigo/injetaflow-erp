@@ -9,19 +9,20 @@ export function campo(linha: string, inicio: number, fim: number): string {
   return linha.slice(inicio - 1, fim);
 }
 
+/** Somente leitura: o parser compartilha o mesmo objeto (congelado) entre registros com a mesma data e hora. */
 export interface DataHoraAfd {
   /** Texto original do arquivo (24 posições). */
-  texto: string;
+  readonly texto: string;
   /** Instante normalizado em UTC (ISO 8601 com "Z"). */
-  utc: string;
+  readonly utc: string;
   /** Fuso original, ex.: "-0300". */
-  fuso: string;
+  readonly fuso: string;
   /** Deslocamento do fuso em minutos (ex.: -180). */
-  offsetMinutos: number;
+  readonly offsetMinutos: number;
   /** Data local do registro no fuso original ("AAAA-MM-dd"). */
-  dataLocal: string;
+  readonly dataLocal: string;
   /** Segundos diferentes de "00" (o leiaute fixa 00). */
-  segundosNaoZero: boolean;
+  readonly segundosNaoZero: boolean;
 }
 
 const RE_DH = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-])(\d{2})(\d{2})$/;
