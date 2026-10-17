@@ -77,7 +77,7 @@ function saveAnexo(empresaId: string, anexo: { nome: string; base64: string }, a
   const buffer = Buffer.from(content, "base64");
   if (buffer.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo vazio." });
   if (buffer.length > MAX_ANEXO_BYTES) throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo acima de 5 MB." });
-  const safeName = anexo.nome.replace(/[^\w.\-]+/g, "_").slice(-80);
+  const safeName = anexo.nome.replace(/[^\w.-]+/g, "_").slice(-80);
   const fileName = `${randomUUID()}.${ext}`;
   const dir = path.join(dataDir(), "uploads", empresaId.replace(/[^\w-]/g, ""));
   fs.mkdirSync(dir, { recursive: true });
