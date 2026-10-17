@@ -47,6 +47,8 @@ export interface DataRepository {
   softDelete(collection: string, empresaId: string, id: string, actor?: Actor | null): Promise<boolean>;
   /** Busca sem filtro de empresa. Uso restrito a login/sessão (descobrir a empresa do usuário). */
   findGlobal<T = Record<string, unknown>>(collection: string, predicate: (data: T, record: StoredRecord<T>) => boolean): Promise<StoredRecord<T> | null>;
+  /** Como findGlobal, mas devolve todos os registros que atendem (login por usuário/matrícula). */
+  findAllGlobal<T = Record<string, unknown>>(collection: string, predicate: (data: T, record: StoredRecord<T>) => boolean): Promise<StoredRecord<T>[]>;
   /** Remoção física. Uso restrito a dados técnicos expirados (ex.: sessões vencidas). */
   purge(collection: string, predicate: (record: StoredRecord) => boolean): Promise<number>;
 }
@@ -125,6 +127,10 @@ export class MemoryRepository implements DataRepository {
   async findGlobal<T>(collection: string, predicate: (data: T, record: StoredRecord<T>) => boolean): Promise<StoredRecord<T> | null> {
     const row = (this.bucket(collection) as StoredRecord<T>[]).find(item => !item.deletedAt && predicate(item.data, item));
     return row ? clone(row) : null;
+  }
+
+  async findAllGlobal<T>(collection: string, predicate: (data: T, record: StoredRecord<T>) => boolean): Promise<StoredRecord<T>[]> {
+    return clone((this.bucket(collection) as StoredRecord<T>[]).filter(item => !item.deletedAt && predicate(item.data, item)));
   }
 
   async purge(collection: string, predicate: (record: StoredRecord) => boolean): Promise<number> {

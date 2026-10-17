@@ -18,7 +18,7 @@ test.describe("sessão e guarda de rotas", () => {
     await page.getByRole("textbox", { name: /E-mail/ }).fill(E2E_ADMIN.email);
     await page.getByLabel("Senha").fill("senha-errada-123");
     await page.getByRole("button", { name: /Entrar/ }).click();
-    await expect(page.locator(".erp-form-error")).toContainText(/E-mail ou senha inválidos/);
+    await expect(page.locator(".erp-form-error")).toContainText(/Usuário, e-mail, matrícula ou senha inválidos/);
     await expect(page).toHaveURL(/\/erp/);
   });
 

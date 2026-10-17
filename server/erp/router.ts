@@ -1,18 +1,19 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_MIN_MESSAGE, identifierKind, normalizeIdentifier, normalizeUsername } from "@shared/erp/account";
 import { MODULE_KEYS, MODULES, hasPermission, type ModuleKey } from "@shared/erp/modules";
 import { assertPermission, moduleProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import type { TrpcContext } from "../_core/context";
 import {
   authenticate, clearLoginFailures, clearSessionCookie, createSession, destroySession, destroyUserSessions, hashUserPassword,
-  isLoginLocked, MAX_FAILURES_PER_EMAIL, registerLoginFailure, setSessionCookie, toSessionUser, USERS,
+  findLoginCandidates, isLoginLocked, MAX_FAILURES_PER_ACCOUNT, MAX_FAILURES_PER_EMAIL, registerLoginFailure, setSessionCookie, toSessionUser, USERS,
 } from "./auth";
 import { verifyPassword } from "./password";
 import { actorOf, audit, type AuditEntry } from "./audit";
 import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, summarize, updateRecord, type RecordData } from "./records";
 import { historico, ORIGENS_PONTO, presenca, registrarPonto, relatorio, relatorioCsv, TIPOS_PONTO } from "./rh";
 import { dashboardSummary } from "./dashboard";
-import { createUser, deleteUser, listUsers, updateUser, userCreateSchema, userUpdateSchema } from "./users";
+import { createUser, deleteUser, listUsers, updateOwnAccount, updateUser, userCreateSchema, userUpdateSchema } from "./users";
 import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
 import { publicEmpresaId } from "./store";
 import { clientIp } from "./net";
@@ -44,30 +45,38 @@ const permOf = (key: ModuleKey) => MODULES[key].permission;
 export const authRouter = router({
   me: publicProcedure.query(({ ctx }) => ctx.user),
   login: publicProcedure
-    .input(z.object({ email: z.string().trim().min(1, "Informe o e-mail").max(200), password: z.string().min(1, "Informe a senha").max(200) }))
+    .input(z.object({
+      // um único campo: e-mail, nome de usuário ou matrícula ("email" mantido por compatibilidade)
+      identificador: z.string().trim().max(200).optional(),
+      email: z.string().trim().max(200).optional(),
+      password: z.string().min(1, "Informe a senha").max(200),
+    }).refine(value => Boolean((value.identificador || value.email || "").trim()), { message: "Informe o e-mail, usuário ou matrícula", path: ["identificador"] }))
     .mutation(async ({ ctx, input }) => {
-      const email = input.email.trim().toLowerCase();
-      const key = `${ipOf(ctx)}|${email}`;
-      const emailKey = `email|${email}`;
-      if (isLoginLocked(key) || isLoginLocked(emailKey, Date.now(), MAX_FAILURES_PER_EMAIL)) {
+      const identificador = normalizeIdentifier(input.identificador || input.email || "");
+      // limite e bloqueio pelo identificador normalizado (por IP e global) e pela conta encontrada,
+      // para que alternar e-mail/usuário/matrícula da mesma conta não multiplique as tentativas
+      const ipKey = `${ipOf(ctx)}|${identificador}`;
+      const idKey = `id|${identificador}`;
+      const candidates = await findLoginCandidates(ctx.repo, identificador);
+      const accountKeys = candidates.map(c => `conta|${c.id}`);
+      if (isLoginLocked(ipKey) || isLoginLocked(idKey, Date.now(), MAX_FAILURES_PER_EMAIL) || accountKeys.some(k => isLoginLocked(k, Date.now(), MAX_FAILURES_PER_ACCOUNT))) {
         throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde 15 minutos ou fale com o administrador." });
       }
-      const user = await authenticate(ctx.repo, email, input.password);
+      const user = await authenticate(ctx.repo, identificador, input.password, candidates);
       if (user === "inativo") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Usuário inativo. Fale com o administrador para reativar o acesso." });
       }
       if (!user) {
-        registerLoginFailure(key);
-        registerLoginFailure(emailKey);
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
+        for (const key of [ipKey, idKey, ...accountKeys]) registerLoginFailure(key);
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário, e-mail, matrícula ou senha inválidos." });
       }
-      clearLoginFailures(key);
-      clearLoginFailures(emailKey);
+      for (const key of [ipKey, idKey, `conta|${user.id}`]) clearLoginFailures(key);
       const { token, expiresAt } = await createSession(ctx.repo, user, ipOf(ctx));
       setSessionCookie(ctx.req, ctx.res, token, expiresAt);
       const fresh = await ctx.repo.get<UserData>(USERS, user.empresaId, user.id);
       const sessionUser = toSessionUser(fresh ?? user);
-      await audit(ctx.repo, user.empresaId, sessionUser, { acao: "login", modulo: "auth", resumo: `Login de ${sessionUser.email}` });
+      const via = identifierKind(identificador) === "email" ? "e-mail" : normalizeUsername(sessionUser.username ?? "") === identificador ? "usuário" : "matrícula";
+      await audit(ctx.repo, user.empresaId, sessionUser, { acao: "login", modulo: "auth", resumo: `Login de ${sessionUser.email} (via ${via})` });
       return sessionUser;
     }),
   logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -77,7 +86,7 @@ export const authRouter = router({
     return { success: true } as const;
   }),
   changePassword: protectedProcedure
-    .input(z.object({ atual: z.string().min(1, "Informe a senha atual"), nova: z.string().min(8, "Nova senha: mínimo de 8 caracteres").max(200) }))
+    .input(z.object({ atual: z.string().min(1, "Informe a senha atual"), nova: z.string().min(PASSWORD_MIN_LENGTH, `Nova senha: ${PASSWORD_MIN_MESSAGE}`).max(PASSWORD_MAX_LENGTH) }))
     .mutation(async ({ ctx, input }) => {
       const record = await ctx.repo.get<UserData>(USERS, ctx.user.empresaId, ctx.user.id);
       if (!record || !verifyPassword(input.atual, record.data.senhaHash)) throw new TRPCError({ code: "BAD_REQUEST", message: "Senha atual incorreta." });
@@ -180,7 +189,7 @@ export const usuariosRouter = router({
     const all = await listUsers(ctx.repo, ctx.user.empresaId, { ...input, pageSize: 100 });
     const items = [...all.items];
     for (let page = 2; page <= all.pages; page++) items.push(...(await listUsers(ctx.repo, ctx.user.empresaId, { ...input, page, pageSize: 100 })).items);
-    const csv = toCsv(["Nome", "E-mail", "Matrícula", "Setor", "Perfil", "Módulos", "Status", "Último acesso"], items.map(u => [u.nome, u.email, u.matricula, u.setor, u.perfil, u.perfil === "Administrador" ? "Todos" : Object.entries(u.permissoes).map(([k, v]) => `${k}:${v}`).join(", "), u.status, u.ultimoAcesso ?? ""]));
+    const csv = toCsv(["Nome", "E-mail", "Usuário", "Matrícula", "Setor", "Perfil", "Módulos", "Status", "Último acesso"], items.map(u => [u.nome, u.email, u.username ?? "", u.matricula, u.setor, u.perfil, u.perfil === "Administrador" ? "Todos" : Object.entries(u.permissoes).map(([k, v]) => `${k}:${v}`).join(", "), u.status, u.ultimoAcesso ?? ""]));
     return { filename: `usuarios-${todayIso()}.csv`, csv, count: items.length };
   }),
 });
@@ -234,6 +243,11 @@ export const perfilRouter = router({
     const hist = await historico(ctx.repo, ctx.user.empresaId, ctx.user.matricula);
     return { usuario: ctx.user, ...hist };
   }),
+  // Meu perfil: o próprio usuário só troca o nome de usuário (senha em auth.changePassword).
+  // Matrícula, perfil, setor e permissões são recusados no servidor (FORBIDDEN).
+  atualizarConta: protectedProcedure
+    .input(z.record(z.string(), z.unknown()))
+    .mutation(({ ctx, input }) => updateOwnAccount(ctx.repo, ctx.user, input)),
   registrarPonto: protectedProcedure
     .input(pontoInput.omit({ matricula: true }))
     .mutation(({ ctx, input }) => registrarPonto(ctx.repo, ctx.user, { ...input, matricula: ctx.user.matricula })),

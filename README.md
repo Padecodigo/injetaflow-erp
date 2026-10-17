@@ -1,6 +1,6 @@
 # InjetaFlow ERP
 
-ERP para injeção plástica (Wamovale): portal público + ERP com login por e-mail e senha, permissões por módulo, CRUD persistente em todos os módulos, RH/ponto e solicitações do site.
+ERP para injeção plástica (Wamovale): portal público + ERP com login por e-mail, nome de usuário ou matrícula + senha, permissões por módulo, CRUD persistente em todos os módulos, RH/ponto e solicitações do site.
 
 ## Rodar no seu computador (Fedora, Ubuntu, macOS) em 5 passos
 
@@ -8,15 +8,16 @@ Pré-requisitos: **Node.js 20 ou mais novo** e **pnpm 10** (no Fedora: `sudo dnf
 
 ```bash
 git fetch origin
-git checkout feat/mvp-funcional
+git checkout main
+git pull
 pnpm install
 pnpm dev
 ```
 
 1. Abra **http://localhost:3000** (site público). A área interna fica em **http://localhost:3000/erp**.
-2. **Como entrar:** no primeiro `pnpm dev`, o terminal mostra um quadro *“InjetaFlow: administrador inicial”* com o e-mail (`admin@wamovale.local`) e uma **senha gerada, mostrada só nessa vez**. Logo abaixo aparecem os usuários de demonstração (Gestor, Supervisor, Operador, Consulta) e a senha deles. Copie e guarde.
+2. **Como entrar:** no primeiro `pnpm dev`, o terminal mostra um quadro *“InjetaFlow: administrador inicial”* com o usuário `admin` (também vale o e-mail `admin@wamovale.local` ou a matrícula `ADM-0001`) e uma **senha gerada, mostrada só nessa vez**. Logo abaixo aparecem os usuários de demonstração (Gestor, Supervisor, Operador, Consulta) e a senha deles. Copie e guarde.
 3. Prefere escolher as senhas? Antes do primeiro `pnpm dev`, rode `INJETAFLOW_ADMIN_PASSWORD='sua-senha-forte' INJETAFLOW_DEMO_PASSWORD='outra-senha' pnpm dev` (ou coloque essas linhas num arquivo `.env`, veja `.env.example`).
-4. Perdeu a senha? Rode `pnpm erp:reset-senha` (gera outra e mostra no terminal) ou `pnpm erp:reset-senha email@do.usuario`.
+4. Perdeu a senha? Pare o `pnpm dev` e rode `pnpm erp:reset-senha` (gera outra e mostra no terminal) ou `pnpm erp:reset-senha <e-mail | usuário | matrícula>`. Veja [Redefinir senha e usuário do admin](#redefinir-senha-e-usuário-do-admin).
 5. Os dados ficam em `.data/` (ignorada pelo git). Para recomeçar do zero, pare o servidor e apague essa pasta.
 
 Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o selo **DEMO**; para não carregá-los, use `INJETAFLOW_SEED_DEMO=false` no primeiro start.
@@ -27,13 +28,38 @@ Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o se
 - `pnpm build` / `pnpm start`: build de produção e servidor (`dist/`).
 - `pnpm lint` / `pnpm check` / `pnpm test`: ESLint, TypeScript e testes (Vitest).
 - `pnpm test:e2e`: testes ponta a ponta (Playwright; sobe o app na porta 3100 com dados descartáveis em `.data-e2e`). Na primeira vez: `pnpm exec playwright install chromium`.
-- `pnpm erp:reset-senha [email]`: redefine a senha de um usuário local.
+- `pnpm erp:reset-senha [e-mail | usuário | matrícula] [--username novo] [--manter-senha]`: redefine a senha (e opcionalmente o nome de usuário) de um usuário local.
+
+## Login, nome de usuário e Meu perfil
+
+- A tela de login tem **um campo só**: *E-mail, usuário ou matrícula*, mais a senha. O servidor descobre o tipo: com `@` é e-mail; sem `@`, procura primeiro o nome de usuário e depois a matrícula. Maiúsculas e minúsculas não importam. A mensagem de erro é sempre genérica.
+- **Nome de usuário** (`username`): único por empresa, sem diferenciar maiúsculas, 3 a 40 caracteres (`a-z`, `0-9`, `.`, `_`, `-`) e não pode coincidir com a matrícula de outra pessoa. Na primeira subida desta versão, os dados existentes são migrados automaticamente, sem perda: cada usuário recebe um nome de usuário derivado do e-mail (`maria.silva@...` → `maria.silva`) e o administrador mais antigo de cada empresa recebe `admin`. Uma instalação nova já cria o admin com usuário `admin`.
+- **Senha:** mínimo de 6 caracteres (cadastro, troca, redefinição e script).
+- **Meu perfil:** cada pessoa troca a própria senha (a senha atual é obrigatória) e o próprio nome de usuário. Matrícula, e-mail, perfil, setor e permissões aparecem só para leitura, e o servidor também recusa essas alterações.
+- **Usuários (administrador):** o administrador altera qualquer campo de qualquer usuário: matrícula, usuário, e-mail, perfil, setor, módulos, status e redefinição de senha. Outros perfis com permissão de editar usuários não alteram matrícula, não editam administradores e não concedem o perfil Administrador. Toda alteração é auditada (antes → depois; a senha nunca aparece).
+- O apontamento rápido da produção por matrícula continua separado e não abre sessão no ERP.
+
+## Redefinir senha e usuário do admin
+
+Pare o `pnpm dev` antes (o servidor mantém os dados em memória e sobrescreveria a mudança). Para escolher a senha sem gravá-la em arquivo nem no histórico do shell:
+
+```bash
+read -rsp 'Nova senha do admin: ' INJETAFLOW_ADMIN_PASSWORD; echo
+export INJETAFLOW_ADMIN_PASSWORD
+INJETAFLOW_ADMIN_USERNAME=admin pnpm erp:reset-senha ADM-0001
+unset INJETAFLOW_ADMIN_PASSWORD
+```
+
+- O identificador pode ser e-mail, nome de usuário ou matrícula. Sem ele, o script usa o administrador mais antigo (ou `INJETAFLOW_RESET_USER`).
+- `--username novo` (ou `INJETAFLOW_ADMIN_USERNAME`) define o nome de usuário. `--manter-senha` troca só o nome de usuário.
+- A senha vinda de `INJETAFLOW_ADMIN_PASSWORD` **nunca** é impressa. Sem essa variável, o script gera uma senha forte e mostra uma única vez.
+- O script também reativa a conta e registra a ação na auditoria.
 
 ## Arquitetura do MVP
 
 - Catálogo único de módulos em `shared/erp/modules.ts` (campos, colunas, filtros, permissões): gera os formulários do front e a validação Zod do servidor. Regras numéricas em `shared/erp/numbers.ts`.
 - Persistência atrás da interface `DataRepository` (`server/erp/repository.ts`): hoje `JsonFileRepository` (arquivo JSON local com escrita atômica) e `MemoryRepository` (testes). Toda consulta é filtrada por `empresaId`. Para migrar para Supabase/Postgres, basta implementar a mesma interface e trocá-la em `server/erp/store.ts`; nenhuma migration foi criada ou aplicada.
-- Sessão: senha com scrypt, token aleatório guardado como hash, cookie `httpOnly` + `SameSite=Lax` (Secure em https/produção), validade de 12 h, bloqueio após 5 tentativas erradas em 15 min.
+- Sessão: senha com scrypt, token aleatório guardado como hash, cookie `httpOnly` + `SameSite=Lax` (Secure em https/produção), validade de 12 h, bloqueio após 5 tentativas erradas em 15 min (por IP + identificador normalizado, além de limites por identificador e por conta, sem importar se a pessoa digitou e-mail, usuário ou matrícula). Senha mínima: 6 caracteres.
 - Permissões por módulo (`ver`/`editar`) checadas no servidor (tRPC) e no front (guarda de rota + 403).
 
 ---

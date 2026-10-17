@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ADMIN, callerFor, setup } from "./helpers";
 import { trustProxySetting } from "../net";
 import { createUser } from "../users";
+import { generatePassword } from "../password";
+
+const INATIVO_SENHA = generatePassword(12);
 
 describe("N01: X-Forwarded-For forjado não burla bloqueio de login nem limite do portal", () => {
   it("bloqueio de login usa o IP do socket, mesmo trocando o X-Forwarded-For a cada tentativa", async () => {
@@ -52,9 +55,9 @@ describe("N01: X-Forwarded-For forjado não burla bloqueio de login nem limite d
 describe("N12: usuário inativo recebe mensagem clara (só quando a senha está certa)", () => {
   it("inativo com senha certa → FORBIDDEN 'Usuário inativo'; senha errada continua genérica", async () => {
     const { repo, empresaId } = await setup();
-    await createUser(repo, null, empresaId, { nome: "Inativo Teste", email: "inativo@teste.local", senha: "Senha-Inativo-1", setor: "Produção", perfil: "Operador", matricula: "INA-1", permissoes: {}, status: "Inativo" });
+    await createUser(repo, null, empresaId, { nome: "Inativo Teste", email: "inativo@teste.local", senha: INATIVO_SENHA, setor: "Produção", perfil: "Operador", matricula: "INA-1", permissoes: {}, status: "Inativo" });
     const anon = await callerFor(repo);
-    await expect(anon.caller.auth.login({ email: "inativo@teste.local", password: "Senha-Inativo-1" })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/Usuário inativo/) });
-    await expect(anon.caller.auth.login({ email: "inativo@teste.local", password: "errada-123" })).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
+    await expect(anon.caller.auth.login({ email: "inativo@teste.local", password: INATIVO_SENHA })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/Usuário inativo/) });
+    await expect(anon.caller.auth.login({ email: "inativo@teste.local", password: "errada-123" })).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "Usuário, e-mail, matrícula ou senha inválidos." });
   });
 });

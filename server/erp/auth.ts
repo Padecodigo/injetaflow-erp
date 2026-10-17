@@ -4,6 +4,7 @@ import { parse as parseCookie } from "cookie";
 import { PERMISSION_KEYS, PERFIS, type AccessLevel, type Permissions } from "@shared/erp/modules";
 import type { DataRepository, StoredRecord } from "./repository";
 import { hashPassword, verifyPassword } from "./password";
+import { identifierKind, normalizeIdentifier, normalizeUsername } from "@shared/erp/account";
 import type { SessionData, SessionUser, UserData } from "./types";
 
 export const SESSION_COOKIE = "injetaflow_session";
@@ -41,8 +42,9 @@ export function isValidPerfil(perfil: string): boolean {
 const failures = new Map<string, number[]>();
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
-/** N01: limite por e-mail, independente do IP (impede força bruta distribuída). */
+/** N01: limite por identificador/conta, independente do IP (impede força bruta distribuída). */
 export const MAX_FAILURES_PER_EMAIL = 10;
+export const MAX_FAILURES_PER_ACCOUNT = MAX_FAILURES_PER_EMAIL;
 
 export function isLoginLocked(key: string, now = Date.now(), max = MAX_FAILURES): boolean {
   const recent = (failures.get(key) ?? []).filter(ts => now - ts < WINDOW_MS);
@@ -65,18 +67,46 @@ export async function findUserByEmail(repo: DataRepository, email: string) {
   return repo.findGlobal<UserData>(USERS, data => data.email === normalized);
 }
 
+export async function findUserByUsername(repo: DataRepository, empresaId: string, username: string, ignoreId?: string) {
+  const wanted = normalizeUsername(username);
+  const { items } = await repo.list<UserData>(USERS, empresaId, { filter: (data, record) => record.id !== ignoreId && normalizeUsername(data.username ?? "") === wanted, limit: 1 });
+  return items[0] ?? null;
+}
+
+/**
+ * Login flexível: identifica se o texto é e-mail, nome de usuário ou matrícula.
+ * Com "@" é e-mail; sem "@", procura primeiro por nome de usuário e depois por matrícula
+ * (comparação sem diferenciar maiúsculas). Devolve os candidatos na ordem de preferência.
+ */
+export async function findLoginCandidates(repo: DataRepository, identifier: string): Promise<StoredRecord<UserData>[]> {
+  const id = normalizeIdentifier(identifier);
+  if (!id) return [];
+  if (identifierKind(id) === "email") {
+    const user = await findUserByEmail(repo, id);
+    return user ? [user] : [];
+  }
+  const byUsername = await repo.findAllGlobal<UserData>(USERS, data => normalizeUsername(data.username ?? "") === id);
+  const byMatricula = await repo.findAllGlobal<UserData>(USERS, data => String(data.matricula ?? "").trim().toLowerCase() === id);
+  const seen = new Set<string>();
+  return [...byUsername, ...byMatricula].filter(record => (seen.has(record.id) ? false : (seen.add(record.id), true)));
+}
+
+const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+
 /** Retorna o usuário, "inativo" (senha certa, mas usuário desativado — N12) ou null. */
-export async function authenticate(repo: DataRepository, email: string, password: string): Promise<StoredRecord<UserData> | "inativo" | null> {
-  const user = await findUserByEmail(repo, email);
-  if (!user) {
-    // custo equivalente para não revelar se o e-mail existe
-    verifyPassword(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==");
+export async function authenticate(repo: DataRepository, identifier: string, password: string, candidates?: StoredRecord<UserData>[]): Promise<StoredRecord<UserData> | "inativo" | null> {
+  const users = candidates ?? (await findLoginCandidates(repo, identifier));
+  if (users.length === 0) {
+    // custo equivalente para não revelar se o identificador existe
+    verifyPassword(password, DUMMY_HASH);
     return null;
   }
-  const ok = verifyPassword(password, user.data.senhaHash);
-  if (!ok) return null;
-  // só revela o estado "inativo" a quem acertou a senha (não permite enumerar contas)
-  return user.data.status === "Ativo" ? user : "inativo";
+  for (const user of users) {
+    if (!verifyPassword(password, user.data.senhaHash)) continue;
+    // só revela o estado "inativo" a quem acertou a senha (não permite enumerar contas)
+    return user.data.status === "Ativo" ? user : "inativo";
+  }
+  return null;
 }
 
 export async function createSession(repo: DataRepository, user: StoredRecord<UserData>, ip?: string): Promise<{ token: string; expiresAt: Date }> {

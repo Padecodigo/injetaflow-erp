@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { TRPCError } from "@trpc/server";
-import { ADMIN, callerFor, createAndLogin, login, setup } from "./helpers";
+import { ADMIN, USER_SENHA, callerFor, createAndLogin, login, setup } from "./helpers";
 import { SESSION_COOKIE } from "../auth";
+import { generatePassword } from "../password";
+
+const NOVA_SENHA = generatePassword(12);
 
 describe("sessão com e-mail e senha", () => {
   it("B02: login grava cookie httpOnly e a sessão continua válida em nova requisição (F5)", async () => {
@@ -18,8 +21,8 @@ describe("sessão com e-mail e senha", () => {
   it("recusa senha errada e e-mail inexistente com a mesma mensagem", async () => {
     const { repo } = await setup();
     const anon = await callerFor(repo);
-    await expect(anon.caller.auth.login({ email: ADMIN.email, password: "errada" })).rejects.toThrow("E-mail ou senha inválidos.");
-    await expect(anon.caller.auth.login({ email: "x@y.z", password: "errada" })).rejects.toThrow("E-mail ou senha inválidos.");
+    await expect(anon.caller.auth.login({ email: ADMIN.email, password: "errada" })).rejects.toThrow("Usuário, e-mail, matrícula ou senha inválidos.");
+    await expect(anon.caller.auth.login({ email: "x@y.z", password: "errada" })).rejects.toThrow("Usuário, e-mail, matrícula ou senha inválidos.");
   });
 
   it("bloqueia após 5 tentativas erradas", async () => {
@@ -53,15 +56,15 @@ describe("sessão com e-mail e senha", () => {
     const me = await op.caller.auth.me();
     await admin.caller.usuarios.update({ id: me!.id, data: { status: "Inativo" } });
     expect(await (await callerFor(repo, op.token)).caller.auth.me()).toBeNull();
-    await expect(login(repo, "op@teste.local", "Senha-Usuario-123")).rejects.toThrow();
+    await expect(login(repo, "op@teste.local", USER_SENHA)).rejects.toThrow();
   });
 
   it("troca de senha exige a senha atual", async () => {
     const { repo, admin } = await setup();
-    await expect(admin.caller.auth.changePassword({ atual: "errada", nova: "Nova-Senha-456" })).rejects.toThrow("Senha atual incorreta.");
-    await admin.caller.auth.changePassword({ atual: ADMIN.senha, nova: "Nova-Senha-456" });
+    await expect(admin.caller.auth.changePassword({ atual: "errada", nova: NOVA_SENHA })).rejects.toThrow("Senha atual incorreta.");
+    await admin.caller.auth.changePassword({ atual: ADMIN.senha, nova: NOVA_SENHA });
     await expect(login(repo, ADMIN.email, ADMIN.senha)).rejects.toThrow();
-    const ok = await login(repo, ADMIN.email, "Nova-Senha-456");
+    const ok = await login(repo, ADMIN.email, NOVA_SENHA);
     expect((await ok.caller.auth.me())?.email).toBe(ADMIN.email);
   });
 });

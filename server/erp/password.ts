@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { PASSWORD_MIN_LENGTH } from "@shared/erp/account";
 
 const N = 16384;
 const R = 8;
@@ -7,7 +8,7 @@ const KEYLEN = 64;
 
 /** Gera hash scrypt no formato `scrypt$N$r$p$salt$hash` (nunca guardar senha em texto). */
 export function hashPassword(password: string): string {
-  if (typeof password !== "string" || password.length < 8) throw new Error("A senha precisa ter pelo menos 8 caracteres.");
+  if (typeof password !== "string" || password.length < PASSWORD_MIN_LENGTH) throw new Error(`A senha precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
   const salt = randomBytes(16);
   const hash = scryptSync(password, salt, KEYLEN, { N, r: R, p: P });
   return `scrypt$${N}$${R}$${P}$${salt.toString("base64")}$${hash.toString("base64")}`;

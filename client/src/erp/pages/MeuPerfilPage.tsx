@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, CheckCircle2, Clock3, History, KeyRound, Loader2, LogOut, Pencil, Plus, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, History, KeyRound, Loader2, LogOut, Pencil, Plus, UserRound, XCircle } from "lucide-react";
+import { PASSWORD_MIN_LENGTH, PASSWORD_MIN_MESSAGE, USERNAME_MAX_LENGTH, usernameError } from "@shared/erp/account";
 import { toast } from "sonner";
 import { PERMISSION_KEYS, PERMISSION_LABELS } from "@shared/erp/modules";
 import { trpc } from "@/lib/trpc";
@@ -54,6 +55,42 @@ function OcorrenciaModal({ onClose, editing }: { onClose: () => void; editing?: 
   );
 }
 
+/** Minha conta: troca do nome de usuário. Matrícula, perfil e setor são só leitura (definidos pelo administrador). */
+function ContaForm() {
+  const { user } = useSession();
+  const utils = trpc.useUtils();
+  const salvar = trpc.perfil.atualizarConta.useMutation();
+  const [username, setUsername] = useState(user?.username ?? "");
+  const [erro, setErro] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const problema = usernameError(username);
+    setErro(problema);
+    if (problema) return;
+    try {
+      const out = await salvar.mutateAsync({ username: username.trim().toLowerCase() });
+      utils.auth.me.setData(undefined, out);
+      utils.perfil.invalidate();
+      toast.success("Nome de usuário atualizado", { description: `Agora você também pode entrar com "${out.username}".` });
+    } catch (error) {
+      setErro(errorMessage(error));
+      toast.error("Não foi possível salvar", { description: errorMessage(error) });
+    }
+  };
+  return (
+    <section className="panel profile-docs-panel" aria-label="Minha conta">
+      <div className="panel-heading"><div><span className="panel-kicker">Acesso</span><h2>Minha conta</h2></div><UserRound size={18} color="var(--teal-dark)" /></div>
+      <form onSubmit={submit} noValidate aria-label="Minha conta">
+        <label className="modal-field"><span>Nome de usuário (login)</span><input name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={USERNAME_MAX_LENGTH} aria-invalid={erro ? true : undefined} value={username} onChange={e => { setUsername(e.target.value.toLowerCase()); setErro(null); }} />{erro && <small className="erp-field-error" role="alert">{erro}</small>}</label>
+        <label className="modal-field"><span>Matrícula</span><input name="matricula" value={user?.matricula ?? ""} readOnly aria-readonly="true" disabled /><small className="erp-muted">Somente o administrador altera a matrícula.</small></label>
+        <label className="modal-field"><span>E-mail</span><input name="email" value={user?.email ?? ""} readOnly disabled /></label>
+        <label className="modal-field"><span>Perfil e setor</span><input name="perfil" value={`${user?.perfil ?? ""} · ${user?.setor ?? ""}`} readOnly disabled /></label>
+        <div className="erp-modal-actions"><button className="button button--primary" disabled={salvar.isPending || username.trim().toLowerCase() === (user?.username ?? "")}>{salvar.isPending && <Loader2 size={15} className="erp-spin" />}Salvar nome de usuário</button></div>
+      </form>
+    </section>
+  );
+}
+
 function SenhaForm() {
   const change = trpc.auth.changePassword.useMutation();
   const [atual, setAtual] = useState("");
@@ -61,6 +98,10 @@ function SenhaForm() {
   const [confirma, setConfirma] = useState("");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (nova.length < PASSWORD_MIN_LENGTH) {
+      toast.error("Senha muito curta", { description: `Nova senha: ${PASSWORD_MIN_MESSAGE}.` });
+      return;
+    }
     if (nova !== confirma) {
       toast.error("As senhas não conferem");
       return;
@@ -78,8 +119,8 @@ function SenhaForm() {
       <div className="panel-heading"><div><span className="panel-kicker">Segurança</span><h2>Alterar senha</h2></div><KeyRound size={18} color="var(--teal-dark)" /></div>
       <form onSubmit={submit}>
         <label className="modal-field"><span>Senha atual</span><input type="password" autoComplete="current-password" required value={atual} onChange={e => setAtual(e.target.value)} /></label>
-        <label className="modal-field"><span>Nova senha (mín. 8)</span><input type="password" autoComplete="new-password" required minLength={8} value={nova} onChange={e => setNova(e.target.value)} /></label>
-        <label className="modal-field"><span>Confirmar nova senha</span><input type="password" autoComplete="new-password" required minLength={8} value={confirma} onChange={e => setConfirma(e.target.value)} /></label>
+        <label className="modal-field"><span>Nova senha (mín. {PASSWORD_MIN_LENGTH})</span><input type="password" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH} value={nova} onChange={e => setNova(e.target.value)} /></label>
+        <label className="modal-field"><span>Confirmar nova senha</span><input type="password" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH} value={confirma} onChange={e => setConfirma(e.target.value)} /></label>
         <div className="erp-modal-actions"><button className="button button--primary" disabled={change.isPending}>{change.isPending && <Loader2 size={15} className="erp-spin" />}Salvar nova senha</button></div>
       </form>
     </section>
@@ -180,7 +221,7 @@ export default function MeuPerfilPage() {
           {eventos.length > 6 && <button type="button" className="panel-link panel-link--button" onClick={() => setCompleto(!completo)}>{completo ? "Mostrar menos" : `Ver histórico completo (${eventos.length})`} <History size={15} /></button>}
           <p className="erp-muted">Avaliações de desempenho ainda não fazem parte do MVP.</p>
         </section>
-        <SenhaForm />
+        <div className="profile-account-col"><ContaForm /><SenhaForm /></div>
       </div>
       {ocorrencia && <OcorrenciaModal onClose={() => setOcorrencia(false)} />}
       {editando && <OcorrenciaModal editing={editando} onClose={() => setEditando(null)} />}

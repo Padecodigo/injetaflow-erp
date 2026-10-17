@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Download, KeyRound, Loader2, Pencil, Search, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
 import { toast } from "sonner";
 import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, type Perfil, type Permissions } from "@shared/erp/modules";
+import { PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "@shared/erp/account";
 import { trpc } from "@/lib/trpc";
 import { useSession, type SessionUser } from "../session";
 import { downloadFile, errorMessage, toastError } from "../api";
@@ -22,6 +23,10 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   const create = trpc.usuarios.create.useMutation();
   const update = trpc.usuarios.update.useMutation();
   const editing = Boolean(user);
+  const { user: me } = useSession();
+  // só o administrador altera matrícula (o servidor também bloqueia)
+  const canEditMatricula = !editing || me?.perfil === "Administrador";
+  const [username, setUsername] = useState(user?.username ?? "");
   const [nome, setNome] = useState(user?.nome ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [matricula, setMatricula] = useState(user?.matricula ?? "");
@@ -44,13 +49,13 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     setError(null);
     try {
       if (editing) {
-        await update.mutateAsync({ id: user!.id, data: { nome, email, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, novaSenha: senha || undefined } });
+        await update.mutateAsync({ id: user!.id, data: { nome, email, ...(username.trim() ? { username: username.trim() } : {}), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], perfil, status, permissoes, novaSenha: senha || undefined } });
       } else {
-        await create.mutateAsync({ nome, email, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, senha });
+        await create.mutateAsync({ nome, email, username: username.trim() || undefined, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, senha });
       }
       utils.usuarios.list.invalidate();
       toast.dismiss();
-      toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado", { description: editing ? nome : `${nome} já pode entrar com ${email}${senha ? " e a senha inicial informada" : ""}.` });
+      toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado", { description: editing ? nome : `${nome} já pode entrar com ${username.trim() || email}${senha ? " e a senha inicial informada" : ""}.` });
       onClose();
     } catch (err) {
       setError(errorMessage(err));
@@ -65,14 +70,15 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
       <form onSubmit={submit} aria-label={editing ? "Editar usuário" : "Novo usuário"}>
         <div className="erp-form-grid">
           <label className="modal-field"><span>Nome completo *</span><input name="nome" required minLength={3} value={nome} onChange={e => setNome(e.target.value)} /></label>
-          <label className="modal-field"><span>E-mail corporativo (login) *</span><input name="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
-          <label className="modal-field"><span>Matrícula *</span><input name="matricula" required value={matricula} onChange={e => setMatricula(e.target.value)} placeholder="Ex.: MAT-0042" /></label>
+          <label className="modal-field"><span>E-mail corporativo *</span><input name="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+          <label className="modal-field"><span>Nome de usuário {editing ? "*" : "(opcional)"}</span><input name="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={editing} minLength={USERNAME_MIN_LENGTH} maxLength={USERNAME_MAX_LENGTH} value={username} onChange={e => setUsername(e.target.value.toLowerCase())} placeholder={editing ? "" : "Em branco: gerado a partir do e-mail"} /><small className="erp-muted">Usado no login, junto com e-mail e matrícula. Único na empresa.</small></label>
+          <label className="modal-field"><span>Matrícula *</span><input name="matricula" required readOnly={!canEditMatricula} aria-readonly={!canEditMatricula} value={matricula} onChange={e => setMatricula(e.target.value)} placeholder="Ex.: MAT-0042" />{!canEditMatricula && <small className="erp-muted">Somente o administrador altera a matrícula.</small>}</label>
           <label className="modal-field"><span>Setor *</span><select name="setor" value={setor} onChange={e => setSetor(e.target.value)}>{SETORES.map(s => <option key={s}>{s}</option>)}</select></label>
           <label className="modal-field"><span>Perfil *</span><select name="perfil" value={perfil} onChange={e => choosePerfil(e.target.value as Perfil)}>{PERFIS.map(p => <option key={p}>{p}</option>)}</select></label>
           <label className="modal-field"><span>Status</span><select name="status" value={status} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
           <label className="modal-field erp-span-2"><span>{editing ? "Nova senha (deixe em branco para manter)" : "Senha inicial *"} </span>
             <span className="erp-inline">
-              <input name="senha" type="text" autoComplete="new-password" required={!editing} minLength={8} value={senha} onChange={e => setSenha(e.target.value)} placeholder="Mínimo de 8 caracteres" />
+              <input name="senha" type="text" autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
               <button type="button" className="button button--secondary button--compact" onClick={() => setSenha(randomPassword())}><KeyRound size={14} /> Gerar</button>
             </span>
             <small className="erp-muted">Entregue a senha à pessoa por um canal seguro. Ela pode trocá-la em Meu perfil.</small>
@@ -157,7 +163,7 @@ export default function UsuariosPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Governança de acesso" title="Usuários e acessos" description="Cadastre pessoas com setor, perfil, matrícula e permissão por módulo. Cada usuário entra com o próprio e-mail e senha."
+      <PageHeader eyebrow="Governança de acesso" title="Usuários e acessos" description="Cadastre pessoas com setor, perfil, matrícula e permissão por módulo. Cada usuário entra com o próprio e-mail, nome de usuário ou matrícula e a senha."
         actions={<><button type="button" className="button button--secondary" onClick={doExport} disabled={exportCsv.isPending}>{exportCsv.isPending ? <Loader2 size={16} className="erp-spin" /> : <Download size={16} />} Exportar CSV</button>{canEdit && <button type="button" className="button button--primary" onClick={() => setForm({})}><UserPlus size={16} /> Novo usuário</button>}</>} />
       <section className="panel user-list-panel" aria-label="Usuários cadastrados">
         <div className="panel-heading"><div><span className="panel-kicker">Usuários cadastrados</span><h2>Controle de acesso da equipe</h2></div></div>
@@ -170,7 +176,7 @@ export default function UsuariosPage() {
           <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>
             {list.isLoading ? <tr><td colSpan={8}><Spinner /></td></tr> : rows.length === 0 ? <tr><td colSpan={8}><EmptyState>Nenhum usuário encontrado.</EmptyState></td></tr> : rows.map(row => (
               <tr key={row.id} data-testid="user-row" onDoubleClick={() => canEdit && setForm({ user: row })}>
-                <td className="module-primary"><span className="erp-primary-cell">{row.nome}{row.demo ? <DemoBadge /> : null}</span><small className="erp-muted erp-block">{row.email}</small></td>
+                <td className="module-primary"><span className="erp-primary-cell">{row.nome}{row.demo ? <DemoBadge /> : null}</span><small className="erp-muted erp-block users-email">{row.email}</small>{row.username ? <small className="erp-muted erp-block users-username" title="Nome de usuário">@{row.username}</small> : null}</td>
                 <td>{row.matricula}</td><td>{row.setor}</td><td>{row.perfil}</td>
                 {(() => {
                   const modulos = row.perfil === "Administrador" ? "Todos" : Object.keys(row.permissoes).map(k => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS]).join(", ") || "Só Meu perfil";
