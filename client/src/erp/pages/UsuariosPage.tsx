@@ -163,8 +163,8 @@ export default function UsuariosPage() {
         <div className="panel-heading"><div><span className="panel-kicker">Usuários cadastrados</span><h2>Controle de acesso da equipe</h2></div></div>
         <div className="erp-toolbar" role="search">
           <label className="erp-search"><Search size={15} /><input aria-label="Buscar usuário" placeholder="Buscar por nome, e-mail, matrícula ou setor..." value={searchInput} onChange={e => setSearchInput(e.target.value)} />{searchInput && <button type="button" aria-label="Limpar busca" onClick={() => setSearchInput("")}><X size={14} /></button>}</label>
-          <select aria-label="Filtrar por perfil" value={perfil} onChange={e => setPerfil(e.target.value)}><option value="">Perfil: todos</option>{PERFIS.map(p => <option key={p}>{p}</option>)}</select>
-          <select aria-label="Filtrar por status" value={status} onChange={e => setStatus(e.target.value)}><option value="">Status: todos</option><option>Ativo</option><option>Inativo</option></select>
+          <select aria-label="Filtrar por perfil" value={perfil} onChange={e => setPerfil(e.target.value)}><option value="">Todos os perfis</option>{PERFIS.map(p => <option key={p}>{p}</option>)}</select>
+          <select aria-label="Filtrar por status" value={status} onChange={e => setStatus(e.target.value)}><option value="">Todos os status</option><option>Ativo</option><option>Inativo</option></select>
         </div>
         <div className="module-table-wrap">
           <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>

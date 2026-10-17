@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Download, Eye, Loader2, Pencil, Plus, RefreshCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { columnLabel, type ModuleDef } from "@shared/erp/modules";
+import { filterAllLabel } from "@shared/erp/labels";
 import { trpc } from "@/lib/trpc";
 import { useSession } from "../session";
 import { downloadFile, errorMessage, toastError } from "../api";
@@ -179,7 +180,7 @@ export function ModuleCrud({
         </label>
         {filterFieldDefs.map(field => (
           <select key={field.name} aria-label={`Filtrar por ${field.label}`} value={filters[field.name] ?? ""} onChange={event => setFilters(current => ({ ...current, [field.name]: event.target.value }))}>
-            <option value="">{field.name === mod.statusField ? `Todos os ${field.label.toLowerCase()}s` : `${field.label}: todos`}</option>
+            <option value="">{filterAllLabel(field.label)}</option>
             {field.options!.map(option => <option key={option} value={option}>{option}</option>)}
           </select>
         ))}

@@ -134,22 +134,35 @@ export const recordsRouter = router({
     .input(z.object({ id: z.string().min(1), quantidade: numericSchema({ label: "Quantidade (kg)", min: 0.001 }), documento: z.string().max(120).optional() }))
     .mutation(({ ctx, input }) => consumeRawMaterial(ctx.repo, ctx.user, input.id, input.quantidade, input.documento)),
   searchAll: protectedProcedure.input(z.object({ q: z.string().trim().min(1).max(100) })).query(async ({ ctx, input }) => {
-    const results: { module: string; route: string; moduleLabel: string; id: string; titulo: string; subtitulo: string }[] = [];
+    type Hit = { module: string; route: string; moduleLabel: string; id: string; titulo: string; subtitulo: string };
+    const grupos: Hit[][] = [];
+    const termo = normalizeText(input.q);
     for (const key of MODULE_KEYS) {
       const mod = MODULES[key];
       if (!hasPermission(ctx.user, mod.permission, "ver")) continue;
       const { items } = await listRecords(ctx.repo, ctx.user.empresaId, key, { search: input.q, pageSize: 5 });
-      for (const item of items) {
-        const titleField = mod.autoCode?.field ?? mod.uniqueFields?.[0] ?? mod.columns[0];
-        const subtitle = mod.searchFields.filter(f => f !== titleField).map(f => item[f]).filter(Boolean).slice(0, 2).join(" · ");
-        results.push({ module: key, route: mod.route, moduleLabel: mod.label, id: item.id, titulo: String(item[titleField] ?? item.nome ?? ""), subtitulo: subtitle });
-      }
+      const titleField = mod.autoCode?.field ?? mod.uniqueFields?.[0] ?? mod.columns[0];
+      const hits = items.map(item => ({
+        module: key, route: mod.route, moduleLabel: mod.label, id: item.id,
+        titulo: String(item[titleField] ?? item.nome ?? ""),
+        subtitulo: mod.searchFields.filter(f => f !== titleField).map(f => item[f]).filter(Boolean).slice(0, 2).join(" · "),
+      }));
+      // N13: quem digita o prefixo do código (SOL-, OP-...) vê esse módulo primeiro
+      const prefixo = mod.autoCode ? normalizeText(mod.autoCode.prefix.replace(/-$/, "")) : null;
+      if (hits.length) (prefixo && termo.startsWith(prefixo) ? grupos.unshift(hits) : grupos.push(hits));
     }
     if (hasPermission(ctx.user, "usuarios", "ver")) {
       const users = await listUsers(ctx.repo, ctx.user.empresaId, { search: input.q, pageSize: 5 });
-      for (const u of users.items) results.push({ module: "usuarios", route: "/usuarios", moduleLabel: "Usuários", id: u.id, titulo: u.nome, subtitulo: `${u.matricula} · ${u.perfil}` });
+      if (users.items.length) grupos.push(users.items.map(u => ({ module: "usuarios", route: "/usuarios", moduleLabel: "Usuários", id: u.id, titulo: u.nome, subtitulo: `${u.matricula} · ${u.perfil}` })));
     }
-    return results.slice(0, 40);
+    // N13: distribui o limite entre os módulos (antes os últimos — como Solicitações — eram cortados)
+    const results: Hit[] = [];
+    const exatos = grupos.flat().filter(h => normalizeText(h.titulo) === termo);
+    results.push(...exatos);
+    for (let i = 0; results.length < 40 && grupos.some(g => g.length > i); i++) {
+      for (const g of grupos) if (g[i] && !results.includes(g[i]) && results.length < 40) results.push(g[i]);
+    }
+    return results;
   }),
 });
 

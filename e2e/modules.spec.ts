@@ -123,3 +123,12 @@ test("N05: meta de produção diária aparece em Configurações e vazio é recu
   await page.reload();
   await expect(page.locator('input[name="metaProducaoDiaria"]')).toHaveValue("15000");
 });
+
+test("N09: filtros usam plural correto", async ({ page }) => {
+  await login(page);
+  await page.goto("/estoque");
+  await expect(page.getByRole("combobox", { name: "Filtrar por Situação" }).locator("option").first()).toHaveText("Todas as situações");
+  await page.goto("/solicitacoes");
+  await expect(page.getByRole("combobox", { name: "Filtrar por Status" }).locator("option").first()).toHaveText("Todos os status");
+  await expect(page.locator("body")).not.toContainText(/statuss|situaçãos/);
+});
