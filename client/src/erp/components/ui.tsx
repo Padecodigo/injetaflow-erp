@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { Loader2, MoreHorizontal, X } from "lucide-react";
 import { toneFor, type Tone } from "../format";
 import { numericError } from "@shared/erp/numbers";
+import { pushModal } from "../modalStack";
 
 const TONES: Record<Tone, { color: string; background: string }> = {
   teal: { color: "#0a8f80", background: "#e4faf6" },
@@ -35,21 +37,61 @@ export function Spinner({ label = "Carregando..." }: { label?: string }) {
   );
 }
 
-/** Modal acessível com as classes visuais do protótipo (fecha com Esc e no X). */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Modal acessível com as classes visuais do protótipo (fecha com Esc e no X).
+ * F-02 (auditoria de frontend): o modal é renderizado em portal no <body>, deixa o resto da página
+ * `inert` (fora do Tab e do leitor de tela), prende o Tab dentro dele e, ao fechar, devolve o foco
+ * ao elemento que o abriu.
+ */
 export function Modal({ title, eyebrow, description, icon, onClose, children, wide, labelledBy = "erp-modal-title" }: {
   title: string; eyebrow?: string; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; labelledBy?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const backdrop = backdropRef.current;
+    // o resto da página fica inerte enquanto o modal está aberto (modais empilhados: só o de cima fica ativo)
+    const inerted: HTMLElement[] = [];
+    if (backdrop) {
+      for (const el of Array.from(document.body.children)) {
+        if (el === backdrop || !(el instanceof HTMLElement) || el.inert || el.tagName === "SCRIPT") continue;
+        if (el.querySelector("[data-radix-popper-content-wrapper]") || el.hasAttribute("data-radix-popper-content-wrapper")) continue;
+        el.inert = true;
+        inerted.push(el);
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      // só o modal do topo reage (o de baixo está inerte)
+      if (!backdrop || backdrop.inert) return;
+      if (event.key === "Escape") { event.stopPropagation(); onCloseRef.current(); return; }
+      if (event.key !== "Tab" || !ref.current) return;
+      const items = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(el => el.offsetParent !== null || el === document.activeElement);
+      if (!items.length) { event.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !ref.current.contains(active))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (active === last || !ref.current.contains(active))) { event.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", onKey);
+    const popModal = pushModal();
     const first = ref.current?.querySelector<HTMLElement>("input:not([type=hidden]):not([disabled]), select, textarea, button.erp-autofocus");
-    first?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <div ref={ref} className={`access-modal erp-modal ${wide ? "erp-modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
+    (first ?? ref.current)?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      popModal();
+      for (const el of inerted) el.inert = false;
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, []);
+  return createPortal(
+    <div ref={backdropRef} className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div ref={ref} tabIndex={-1} className={`access-modal erp-modal ${wide ? "erp-modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
         <button type="button" className="modal-close" aria-label="Fechar" onClick={onClose}><X size={18} /></button>
         {icon && <div className="access-modal__icon">{icon}</div>}
         {eyebrow && <span className="eyebrow">{eyebrow}</span>}
@@ -57,7 +99,8 @@ export function Modal({ title, eyebrow, description, icon, onClose, children, wi
         {description && <p>{description}</p>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

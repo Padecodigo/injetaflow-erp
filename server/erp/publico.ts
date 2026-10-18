@@ -10,6 +10,19 @@ import { audit } from "./audit";
 import { dataDir } from "./store";
 import type { RecordData } from "./records";
 
+/**
+ * Spec Segurança LGPD (R4/R5, N-12): o envio de currículo pelo portal fica DESLIGADO até existirem aviso de
+ * privacidade, base legal, retenção e expurgo. Só liga com PORTAL_CURRICULOS_ATIVO=true no servidor (padrão false).
+ * O cliente lê a flag pela config pública (publico.config); a recusa vale no servidor mesmo sem a UI.
+ */
+export const CURRICULOS_DESATIVADOS_MSG = "O envio de currículos está temporariamente desativado. Este é um ambiente de demonstração.";
+export function curriculosAtivo(): boolean {
+  return ["true", "1"].includes(String(process.env.PORTAL_CURRICULOS_ATIVO ?? "").trim().toLowerCase());
+}
+export function assertCurriculosAtivo(tipo: unknown) {
+  if (tipo === "Currículo" && !curriculosAtivo()) throw new TRPCError({ code: "FORBIDDEN", message: CURRICULOS_DESATIVADOS_MSG });
+}
+
 export const MAX_ANEXO_BYTES = 5 * 1024 * 1024;
 const EXTENSOES = ["pdf", "doc", "docx", "dwg", "dxf", "step", "stp", "jpg", "jpeg", "png"] as const;
 
@@ -96,6 +109,8 @@ export function anexoPath(empresaId: string, fileName: string): string | null {
 }
 
 export async function enviarSolicitacao(repo: DataRepository, empresaId: string, input: SolicitacaoInput) {
+  // defesa em profundidade: nada é lido do store nem gravado em disco para currículo com a flag desligada
+  assertCurriculosAtivo(input.tipo);
   if (input.website) throw new TRPCError({ code: "BAD_REQUEST", message: "Envio inválido." });
   const mod = MODULES.solicitacoes;
   const { items } = await repo.list<RecordData>("solicitacoes", empresaId, { includeDeleted: true });

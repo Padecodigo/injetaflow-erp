@@ -130,6 +130,14 @@ function SubmitButton({ envio, label }: { envio: Envio; label: string }) {
   );
 }
 
+/** Spec Segurança (R4/R5): o protótipo só tem dados de demonstração; os formulários públicos ativos avisam isso. */
+export const AVISO_DEMONSTRACAO = "Ambiente de demonstração: não envie dados pessoais nem arquivos reais.";
+export const CURRICULOS_DESATIVADOS = "O envio de currículos está temporariamente desativado. Este é um ambiente de demonstração.";
+
+function DemoNotice() {
+  return <p className="public-demo-notice" role="note" data-testid="aviso-demonstracao"><ShieldCheck size={15} aria-hidden="true" /> {AVISO_DEMONSTRACAO}</p>;
+}
+
 function ErrorLine({ envio }: { envio: Envio }) {
   return envio.status === "error" ? <div className="erp-form-error" role="alert">{envio.error}</div> : null;
 }
@@ -179,7 +187,7 @@ function QuotePage() {
   };
   return <div className="public-form-page"><PublicHeader /><main className="public-form-main"><div className="public-form-intro"><span className="portal-kicker">Injeção plástica · Desenvolvimento industrial</span><h1>Tem um projeto de peça plástica?</h1><p>Conte o que você já sabe. Nossa equipe avalia a necessidade e identifica o melhor próximo passo para fabricação.</p><div className="form-trust"><span><CheckCircle2 size={15} /> Engenharia e ferramentaria própria</span><span><CheckCircle2 size={15} /> Atendimento para projetos novos e recorrentes</span><span><CheckCircle2 size={15} /> Arquivo técnico opcional no primeiro contato</span></div></div>
     {envio.status === "sent" ? <div className="lead-form"><Sent envio={envio} onReset={reset}>Nossa equipe comercial vai analisar o projeto e retornar pelo e-mail informado.</Sent></div> :
-    <form className="lead-form" aria-label="Formulário de cotação" onSubmit={submit}><div className="lead-step"><span>1</span><div><b>O que você precisa?</b><small>Escolha a opção mais próxima do seu momento.</small></div></div><div className="choice-grid">{["Fabricar peças para meu produto", "Desenvolver uma peça nova", "Produzir com molde que já possuo", "Avaliar viabilidade ou transferir produção"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="necessidade" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div><div className="lead-step"><span>2</span><div><b>Em que etapa está o projeto?</b><small>Isso ajuda a equipe a preparar a conversa certa.</small></div></div><div className="choice-grid choice-grid--three">{["Tenho desenho ou arquivo 3D", "Tenho uma amostra física", "Tenho apenas uma ideia ou referência"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="etapa" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div>
+    <form className="lead-form" aria-label="Formulário de cotação" onSubmit={submit}><DemoNotice /><div className="lead-step"><span>1</span><div><b>O que você precisa?</b><small>Escolha a opção mais próxima do seu momento.</small></div></div><div className="choice-grid">{["Fabricar peças para meu produto", "Desenvolver uma peça nova", "Produzir com molde que já possuo", "Avaliar viabilidade ou transferir produção"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="necessidade" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div><div className="lead-step"><span>2</span><div><b>Em que etapa está o projeto?</b><small>Isso ajuda a equipe a preparar a conversa certa.</small></div></div><div className="choice-grid choice-grid--three">{["Tenho desenho ou arquivo 3D", "Tenho uma amostra física", "Tenho apenas uma ideia ou referência"].map((choice, index) => <label className="choice-card" key={choice}><input required type="radio" name="etapa" value={choice} defaultChecked={index === 0} /><span>{choice}</span></label>)}</div>
       <div className="lead-fields"><label><span>Seu nome *</span><input name="nome" required minLength={2} placeholder="Nome e sobrenome" /></label><label><span>Empresa *</span><input name="empresa" required minLength={2} placeholder="Nome da empresa" /></label><label><span>E-mail corporativo *</span><input name="email" required type="email" placeholder="voce@empresa.com.br" /></label><label><span>Telefone (opcional)</span><TelefoneField error={telError} onInput={() => setTelError(null)} /></label><label><span>Volume estimado</span><select name="volume" defaultValue="Ainda estou avaliando"><option>Lote piloto ou pequenas quantidades</option><option>Produção recorrente em escala industrial</option><option>Ainda estou avaliando</option></select></label><label><span>Material da peça</span><select name="material" defaultValue="Preciso de orientação"><option>Já sei qual material preciso</option><option>Preciso de orientação</option></select></label><label className="lead-fields__full"><span>Conte mais sobre o projeto (opcional)</span><textarea name="mensagem" rows={3} maxLength={4000} placeholder="Aplicação, requisitos, prazos..." /></label></div>
       <label className="file-drop"><input type="file" name="anexo" accept=".pdf,.dwg,.dxf,.step,.stp,.jpg,.jpeg,.png" onChange={e => setFileName(e.target.files?.[0]?.name ?? "")} /><Upload size={19} /><span><b>{fileName || <>Anexar desenho, 3D ou referência <small>(opcional)</small></>}</b><small>PDF, DWG, DXF, STEP, JPG ou PNG · até 5 MB</small></span></label>
       <Consent>Autorizo a Wamovale a usar estes dados apenas para retorno comercial sobre este projeto.</Consent><Honeypot /><ErrorLine envio={envio} />
@@ -187,7 +195,26 @@ function QuotePage() {
   </main><PublicFooter back /></div>;
 }
 
-function CareersPage() {
+/**
+ * Trabalhe conosco. Spec Segurança (R4/R5, N-12): o envio de currículo só existe com a flag do servidor
+ * PORTAL_CURRICULOS_ATIVO=true (padrão false), lida pela config pública. Enquanto a flag não chega ou é false,
+ * não há campo de arquivo nem botão de envio: só o aviso. O servidor também recusa (403) o envio direto.
+ */
+export function CareersPage() {
+  const config = trpc.publico.config.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const ativo = config.data?.curriculosAtivo === true;
+  return ativo ? <CareersForm /> : <CareersDisabled />;
+}
+
+function CareersDisabled() {
+  return <div className="public-form-page"><PublicHeader /><main className="career-main"><div className="career-copy"><span className="portal-kicker">Pessoas que fazem acontecer</span><h1>Trabalhe conosco</h1><p>Quer fazer parte da Wamovale? Conheça nosso jeito de trabalhar: inovação, qualidade e valorização humana.</p><div className="career-highlights"><span><Users size={16} /> Ambiente industrial</span><span><Sparkles size={16} /> Aprendizado e desenvolvimento</span><span><ShieldCheck size={16} /> Respeito e segurança</span></div></div><div className="career-options career-options--single">
+    <section className="career-card career-card--primary"><span className="career-card-icon"><Upload size={18} /></span><h2>Enviar currículo</h2>
+      <p className="public-disabled-notice" role="status" data-testid="curriculos-desativados">{CURRICULOS_DESATIVADOS}</p>
+    </section>
+  </div></main><PublicFooter back /></div>;
+}
+
+function CareersForm() {
   const { envio, enviar, reset } = useEnvio();
   const [fileName, setFileName] = useState("");
   const [telError, setTelError] = useState<string | null>(null);
@@ -220,6 +247,7 @@ function CareersPage() {
     <section className="career-card career-card--primary"><span className="career-card-icon"><Upload size={18} /></span><h2>Enviar currículo</h2>
       {envio.status === "sent" ? <Sent envio={envio} onReset={reset}>Seu currículo chegou ao RH. Se não houver vaga aberta agora, ele fica no nosso banco de talentos.</Sent> :
       <form className="career-form" aria-label="Enviar currículo" onSubmit={submit}>
+        <DemoNotice />
         <label className="modal-field"><span>Nome completo *</span><input name="nome" required minLength={2} /></label>
         <label className="modal-field"><span>E-mail *</span><input name="email" type="email" required /></label>
         <label className="modal-field"><span>Telefone (opcional)</span><TelefoneField error={telError} onInput={() => setTelError(null)} /></label>
@@ -261,6 +289,7 @@ function ContactSection() {
       </div>
       {envio.status === "sent" ? <div className="lead-form"><Sent envio={envio} onReset={reset}>A equipe vai direcionar sua mensagem para quem pode ajudar.</Sent></div> : (
         <form className="lead-form contact-form" aria-label="Formulário de contato" onSubmit={submit}>
+          <DemoNotice />
           <div className="lead-fields">
             <label><span>Nome *</span><input name="nome" required minLength={2} /></label>
             <label><span>Empresa (opcional)</span><input name="empresa" /></label>

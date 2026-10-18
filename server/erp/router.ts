@@ -15,7 +15,7 @@ import { historico, presenca, relatorio, relatorioCsv } from "./rh";
 import { auditarNegacaoPonto, type RotaNegadaPonto } from "./ponto-negacoes";
 import { dashboardSummary } from "./dashboard";
 import { createUser, deleteUser, listUsers, updateOwnAccount, updateUser, userCreateSchema, userUpdateSchema } from "./users";
-import { checkPublicRate, enviarSolicitacao, solicitacaoSchema } from "./publico";
+import { assertCurriculosAtivo, checkPublicRate, curriculosAtivo, enviarSolicitacao, solicitacaoSchema } from "./publico";
 import { publicEmpresaId } from "./store";
 import { clientIp } from "./net";
 import type { SessionUser, UserData } from "./types";
@@ -340,7 +340,18 @@ export const configRouter = router({
 });
 
 export const publicoRouter = router({
-  enviarSolicitacao: publicProcedure.input(solicitacaoSchema).mutation(async ({ ctx, input }) => {
+  /** Config pública do portal (sem dados sensíveis): hoje só a flag de currículos (PORTAL_CURRICULOS_ATIVO). */
+  config: publicProcedure.query(() => ({ curriculosAtivo: curriculosAtivo() })),
+  enviarSolicitacao: publicProcedure
+    // Spec Segurança: currículo com a flag desligada é recusado (403) ANTES da validação do corpo, do limite
+    // por IP e de qualquer leitura/gravação no store ou no disco de anexos. Só o campo "tipo" é inspecionado.
+    .use(async ({ getRawInput, next }) => {
+      const raw = await getRawInput();
+      assertCurriculosAtivo(raw && typeof raw === "object" ? (raw as { tipo?: unknown }).tipo : undefined);
+      return next();
+    })
+    .input(solicitacaoSchema)
+    .mutation(async ({ ctx, input }) => {
     checkPublicRate(ipOf(ctx));
     return enviarSolicitacao(ctx.repo, publicEmpresaId(), input);
   }),

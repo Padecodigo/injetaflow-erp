@@ -207,7 +207,7 @@ export function ModuleCrud({
                   )}
                 </th>
               ))}
-              <th><span className="sr-only">Ações</span></th>
+              <th className="row-actions-cell"><span className="sr-only">Ações</span></th>
             </tr>
           </thead>
           <tbody>
@@ -221,7 +221,7 @@ export function ModuleCrud({
               rows.map(row => (
                 <tr key={row.id} data-testid="record-row" onDoubleClick={() => (canEdit && !immutable ? setEditing(row) : setViewing(row))} title="Duplo clique para abrir">
                   {mod.columns.map((column, index) => <td key={column} className={index === 0 ? "module-primary" : ""}>{cell(column, row, index)}</td>)}
-                  <td><RowMenu label={rowLabel(row)} actions={actionsFor(row)} /></td>
+                  <td className="row-actions-cell"><RowMenu label={rowLabel(row)} actions={actionsFor(row)} /></td>
                 </tr>
               ))
             )}

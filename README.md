@@ -22,6 +22,8 @@ pnpm dev
 
 Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o selo **DEMO**; para não carregá-los, use `INJETAFLOW_SEED_DEMO=false` no primeiro start. As marcações de ponto de demonstração (origem "Demonstração") só são criadas com `NODE_ENV=development` ou `test` (o `pnpm dev` já define development); com `NODE_ENV` ausente ou `production` não são criadas. Para ligá-las explicitamente, use `INJETAFLOW_SEED_DEMO_PONTO=1` (e `=0` para desligar). O ERP não registra ponto: a origem oficial das marcações é o relógio (REP).
 
+**Envio de currículo pelo portal: desligado.** O protótipo só tem dados de demonstração e ainda não há aviso de privacidade, base legal, retenção nem expurgo (riscos R4/R5). O "Trabalhe conosco" mostra só um aviso, e o servidor responde 403 a qualquer envio de currículo, sem gravar registro nem arquivo. A flag `PORTAL_CURRICULOS_ATIVO` (padrão `false`) só deve ir para `true` depois da decisão N-12. Os formulários de cotação e contato continuam ativos, com o aviso "Ambiente de demonstração: não envie dados pessoais nem arquivos reais."
+
 ## Comandos
 
 - `pnpm dev`: servidor de desenvolvimento (Vite + Express + tRPC), porta `PORT` (padrão 3000).
