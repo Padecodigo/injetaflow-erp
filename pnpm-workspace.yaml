@@ -4,6 +4,10 @@ patchedDependencies:
   wouter@3.7.1: patches/wouter@3.7.1.patch
 overrides:
   tailwindcss>nanoid: 3.3.7
+  # chore/deps-seguranca: transitivas com CVE alta (recharts e mermaid ainda pedem ^4.17)
+  lodash: ^4.18.1
+  lodash-es: ^4.18.1
+  proxy-addr: ^2.0.8
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
