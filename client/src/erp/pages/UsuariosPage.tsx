@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Download, KeyRound, Loader2, Pencil, Search, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
+import { Download, Eye, EyeOff, KeyRound, Loader2, Pencil, Search, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
 import { toast } from "sonner";
 import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, permissionsBeyond, type Perfil, type Permissions } from "@shared/erp/modules";
 import { PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "@shared/erp/account";
@@ -67,6 +67,8 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   const [perfil, setPerfil] = useState<Perfil>((user?.perfil as Perfil) ?? "Operador");
   const [status, setStatus] = useState<"Ativo" | "Inativo">(user?.status ?? "Ativo");
   const [senha, setSenha] = useState("");
+  // F-18 (auditoria de frontend): senha oculta por padrão (quem olha por cima do ombro não vê); "Mostrar" sob demanda
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [permissoes, setPermissoes] = useState<Permissions>(() => user?.permissoes ?? clip(PERFIL_PRESETS.Operador));
   const [error, setError] = useState<string | null>(null);
   const busy = create.isPending || update.isPending;
@@ -91,8 +93,8 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
       toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado", { id: USUARIOS_TOAST, description: editing ? nome : `${nome} já pode entrar com ${username.trim() || email}${senha ? " e a senha inicial informada" : ""}.` });
       onClose();
     } catch (err) {
-      setError(errorMessage(err));
-      toast.error("Não foi possível salvar", { id: USUARIOS_TOAST, description: errorMessage(err) });
+      // F-01: o erro fica no modal (role=alert, junto aos botões); sem toast cobrindo "Cadastrar usuário"
+      setError(`Não foi possível salvar: ${errorMessage(err)}`);
     }
   };
 
@@ -112,8 +114,9 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
           <label className="modal-field"><span>Status</span><select name="status" value={status} disabled={self || credTravadas} onChange={e => setStatus(e.target.value as "Ativo" | "Inativo")}><option>Ativo</option><option>Inativo</option></select></label>
           <label className="modal-field erp-span-2"><span>{editing ? "Nova senha (deixe em branco para manter)" : "Senha inicial *"} </span>
             <span className="erp-inline">
-              <input name="senha" type="text" disabled={credTravadas} autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
-              <button type="button" className="button button--secondary button--compact" disabled={credTravadas} onClick={() => setSenha(randomPassword())}><KeyRound size={14} /> Gerar</button>
+              <input name="senha" type={mostrarSenha ? "text" : "password"} disabled={credTravadas} autoComplete="new-password" required={!editing} minLength={PASSWORD_MIN_LENGTH} value={senha} onChange={e => setSenha(e.target.value)} placeholder={`Mínimo de ${PASSWORD_MIN_LENGTH} caracteres`} />
+              <button type="button" className="button button--secondary button--compact" disabled={credTravadas} aria-pressed={mostrarSenha} aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"} onClick={() => setMostrarSenha(v => !v)}>{mostrarSenha ? <EyeOff size={14} /> : <Eye size={14} />} {mostrarSenha ? "Ocultar" : "Mostrar"}</button>
+              <button type="button" className="button button--secondary button--compact" disabled={credTravadas} onClick={() => { setSenha(randomPassword()); setMostrarSenha(true); }}><KeyRound size={14} /> Gerar</button>
             </span>
             <small className="erp-muted">Entregue a senha à pessoa por um canal seguro. Ela pode trocá-la em Meu perfil.</small>
           </label>
@@ -211,7 +214,7 @@ export default function UsuariosPage() {
           <select aria-label="Filtrar por status" value={status} onChange={e => setStatus(e.target.value)}><option value="">Todos os status</option><option>Ativo</option><option>Inativo</option></select>
         </div>
         <div className="module-table-wrap">
-          <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th /></tr></thead><tbody>
+          <table className="module-table users-table"><thead><tr><th>Usuário</th><th>Matrícula</th><th>Setor</th><th>Perfil</th><th>Módulos</th><th>Último acesso</th><th>Status</th><th className="row-actions-cell"><span className="sr-only">Ações</span></th></tr></thead><tbody>
             {list.isLoading ? <tr><td colSpan={8}><Spinner /></td></tr> : rows.length === 0 ? <tr><td colSpan={8}><EmptyState>Nenhum usuário encontrado.</EmptyState></td></tr> : rows.map(row => (
               <tr key={row.id} data-testid="user-row" onDoubleClick={() => canEdit && !protegido(row) && setForm({ user: row })}>
                 <td className="module-primary"><span className="erp-primary-cell">{row.nome}{row.demo ? <DemoBadge /> : null}</span><small className="erp-muted erp-block users-email">{row.email}</small>{row.username ? <small className="erp-muted erp-block users-username" title="Nome de usuário">@{row.username}</small> : null}</td>
@@ -222,7 +225,7 @@ export default function UsuariosPage() {
                 })()}
                 <td className="muted-cell">{row.ultimoAcesso ? formatDateTime(row.ultimoAcesso) : "Nunca"}</td>
                 <td><StatusPill label={row.status} /></td>
-                <td>{canEdit && <RowMenu label={row.nome} actions={[
+                <td className="row-actions-cell">{canEdit && <RowMenu label={row.nome} actions={[
                   { label: "Editar", onSelect: () => setForm({ user: row }), disabled: protegido(row), icon: <Pencil size={14} /> },
                   { label: row.status === "Ativo" ? "Desativar" : "Reativar", onSelect: () => toggleStatus(row), disabled: row.id === me?.id || protegido(row) || superior(row), icon: row.status === "Ativo" ? <UserX size={14} /> : <UserCheck size={14} /> },
                   { label: "Excluir", onSelect: () => setRemoving(row), danger: true, disabled: row.id === me?.id || protegido(row) || superior(row), icon: <Trash2 size={14} /> },

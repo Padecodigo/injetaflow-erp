@@ -82,9 +82,10 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
     }
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
-      const message = Object.values(errors).join(" ");
-      setError(message);
-      toast.error("Confira os campos destacados", { description: message });
+      // F-01/F-08: sem toast dentro do modal (ele cobria o Salvar no celular e repetia a lista de erros).
+      // O erro fica junto a cada campo e num resumo curto acima dos botões, anunciado por role=alert.
+      const count = Object.keys(errors).length;
+      setError(count === 1 ? "1 campo para conferir." : `${count} campos para conferir.`);
       return;
     }
     const data: Record<string, unknown> = {};
@@ -100,9 +101,8 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
       onSaved?.(saved);
       onClose();
     } catch (err) {
-      const message = errorMessage(err);
-      setError(message);
-      toast.error(editing ? "Não foi possível salvar" : "Não foi possível criar", { description: message });
+      // F-01: erro do servidor aparece no modal (role=alert), sem toast cobrindo os botões
+      setError(`${editing ? "Não foi possível salvar" : "Não foi possível criar"}: ${errorMessage(err)}`);
     }
   };
 

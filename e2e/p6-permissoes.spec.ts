@@ -148,6 +148,8 @@ test.describe("R-01: não administrador não assume a conta de quem tem mais ace
       await dialog.locator('input[name="nome"]').press("Enter");
       await expect(dialog.getByRole("alert")).toContainText("já está cadastrado");
     }
-    await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
+    // F-01 (auditoria de frontend): o erro fica só no modal (um único aviso), sem toast cobrindo os botões
+    await expect(dialog.getByRole("alert")).toHaveCount(1);
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
   });
 });

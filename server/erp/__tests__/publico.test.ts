@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { callerFor, setup } from "./helpers";
 import { anexoPath } from "../publico";
 
@@ -37,7 +37,10 @@ describe("formulários do portal público", () => {
     expect(list.items[0]).toMatchObject({ assunto: "Produção recorrente", mensagem: "Gostaria de conversar" });
   });
 
-  it("B21: trabalhe conosco faz upload real do currículo (PDF/DOC) e recusa outros formatos", async () => {
+  it("B21: com PORTAL_CURRICULOS_ATIVO=true (só em teste), trabalhe conosco faz upload real do currículo (PDF/DOC) e recusa outros formatos", async () => {
+    // Spec Segurança R4/R5: o padrão é desligado (ver curriculos-desativados.test.ts); aqui a flag liga só neste teste
+    process.env.PORTAL_CURRICULOS_ATIVO = "true";
+    onTestFinished(() => { delete process.env.PORTAL_CURRICULOS_ATIVO; });
     const { repo, admin } = await setup("empresa-a");
     const anon = await callerFor(repo, null, "2.2.2.2");
     await expect(anon.caller.publico.enviarSolicitacao({ tipo: "Currículo", nome: "Candidata", email: "c@x.com", area: "Produção", consentimento: true, anexo: { nome: "virus.exe", base64: pdf } })).rejects.toThrow(/Formato/);

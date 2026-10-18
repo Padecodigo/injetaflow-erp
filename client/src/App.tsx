@@ -9,6 +9,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import { SessionProvider } from "./erp/session";
 import { RequireAuth } from "./erp/guard";
+import { useModalOpen } from "./erp/modalStack";
 import LoginPage from "./erp/pages/LoginPage";
 import DashboardPage from "./erp/pages/DashboardPage";
 import RhPage from "./erp/pages/RhPage";
@@ -56,14 +57,22 @@ function Router() {
   );
 }
 
+/**
+ * N08: fora de modal, o aviso fica embaixo e não cobre a barra superior (busca, menu e conta).
+ * F-01: com modal aberto, o aviso vai para o topo e não cobre os botões de ação do modal (que ficam embaixo).
+ */
+function AppToaster() {
+  const modalOpen = useModalOpen();
+  return <Toaster richColors position={modalOpen ? "top-center" : "bottom-right"} closeButton />;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <SessionProvider>
-            {/* N08: o aviso não cobre mais a barra superior (busca, menu e conta) */}
-            <Toaster richColors position="bottom-right" closeButton />
+            <AppToaster />
             <Router />
           </SessionProvider>
         </TooltipProvider>
