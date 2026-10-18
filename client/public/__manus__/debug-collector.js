@@ -94,8 +94,16 @@
       ui: 500,
     },
     reportInterval: 2000,
+    // nomes em português também (o ERP usa "senha", "senhaAtual", "novaSenha")
     sensitiveFields: [
+      "senha",
       "password",
+      "passwd",
+      "segredo",
+      "sessao",
+      "credencial",
+      "credential",
+      "hash",
       "token",
       "secret",
       "key",

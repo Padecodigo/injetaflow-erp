@@ -3,7 +3,8 @@ import express from "express";
 import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
-import { publicPlatformScript } from "./publicConfig";
+import { publicPlatformConfig, publicPlatformScript } from "./publicConfig";
+import { limitTrpcBatch, originOf, securityHeaders } from "./security";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -18,11 +19,8 @@ async function startServer() {
   app.disable("x-powered-by");
   configureTrustProxy(app);
   app.use(trailingSlashRedirect);
-  app.use((_req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    next();
-  });
+  // B-06: CSP, frame-ancestors/X-Frame-Options, HSTS (produção), nosniff, Referrer-Policy e afins
+  app.use(securityHeaders({ mode: process.env.NODE_ENV, extraOrigins: [originOf(publicPlatformConfig().apiUrl)].filter((o): o is string => Boolean(o)) }));
   // anexos públicos (currículo/desenho) vão em base64 com no máximo 5 MB
   app.use(express.json({ limit: "8mb" }));
   app.use(express.urlencoded({ limit: "1mb", extended: true }));
@@ -35,6 +33,7 @@ async function startServer() {
   // tRPC API
   app.use(
     "/api/trpc",
+    limitTrpcBatch(),
     createExpressMiddleware({
       router: appRouter,
       createContext,

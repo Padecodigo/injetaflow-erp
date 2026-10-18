@@ -6,7 +6,7 @@ import type { DataRepository, StoredRecord } from "./repository";
 import type { SessionUser, UserData } from "./types";
 import { actorOf, audit } from "./audit";
 import { formatCsvDate, toCsv } from "./csv";
-import { normalizeText } from "./text";
+import { dataDeCalendarioValida, normalizeText, semCaracteresDeControle } from "./text";
 
 export type RecordData = Record<string, unknown>;
 export type FlatRecord = RecordData & {
@@ -51,15 +51,15 @@ function fieldSchema(field: FieldDef): z.ZodTypeAny {
       return numericSchema({ label: field.label, integer: field.integer, min: field.min, max: field.max, money: field.type === "money" });
     }
     case "date":
-      return z.string(required).regex(dateRegex, `${field.label}: data inválida (AAAA-MM-DD)`);
+      return z.string(required).regex(dateRegex, `${field.label}: data inválida (AAAA-MM-DD)`).refine(dataDeCalendarioValida, `${field.label}: data inexistente no calendário`);
     case "email":
       return z.string(required).trim().toLowerCase().email(`${field.label}: e-mail inválido`).max(200);
     case "select":
       return z.enum(field.options as [string, ...string[]], { error: issue => (issue.input === undefined || issue.input === "" ? `${field.label}: obrigatório.` : `${field.label}: opção inválida.`) });
     case "textarea":
-      return z.string(required).trim().max(4000, `${field.label}: texto muito longo`);
+      return z.string(required).trim().max(4000, `${field.label}: texto muito longo`).refine(semCaracteresDeControle, `${field.label}: caracteres de controle ou de direção do texto não são permitidos`);
     default:
-      return z.string(required).trim().max(300, `${field.label}: texto muito longo`);
+      return z.string(required).trim().max(300, `${field.label}: texto muito longo`).refine(semCaracteresDeControle, `${field.label}: caracteres de controle ou de direção do texto não são permitidos`);
   }
 }
 
@@ -240,8 +240,12 @@ async function findOneBy(repo: DataRepository, empresaId: string, collection: st
   return items[0] ?? null;
 }
 
-/** Regras específicas de cada módulo antes de gravar. */
-async function applyRules(repo: DataRepository, empresaId: string, mod: ModuleDef, data: RecordData, existing?: StoredRecord<RecordData>) {
+/** Efeito colateral de uma regra, executado só DEPOIS de o registro principal ser gravado (B-15). */
+type Efeito = () => Promise<void>;
+
+/** Regras específicas de cada módulo antes de gravar. Efeitos em outros registros vão para `efeitos`. */
+async function applyRules(repo: DataRepository, user: SessionUser, mod: ModuleDef, data: RecordData, existing?: StoredRecord<RecordData>, efeitos: Efeito[] = []) {
+  const empresaId = user.empresaId;
   if (mod.key === "producao") {
     const ordemCodigo = data.ordem ?? existing?.data.ordem;
     const ordem = await findOneBy(repo, empresaId, "ordens", "codigo", ordemCodigo);
@@ -256,7 +260,12 @@ async function applyRules(repo: DataRepository, empresaId: string, mod: ModuleDe
     data.matricula = String(matricula).trim().toUpperCase();
     if (data.refugo === undefined && !existing) data.refugo = 0;
     if (!existing && ["Planejada", "Liberada"].includes(String(ordem.data.status))) {
-      await repo.update("ordens", empresaId, ordem.id, { status: "Em produção" });
+      // B-15: a ordem só muda depois de o apontamento ser gravado, com ator e auditoria
+      const anterior = String(ordem.data.status);
+      efeitos.push(async () => {
+        await repo.update("ordens", empresaId, ordem.id, { status: "Em produção" }, actorOf(user));
+        await audit(repo, empresaId, user, { acao: "editar", modulo: "ordens", registroId: ordem.id, resumo: `Ordem ${String(ordem.data.codigo)}: status "${anterior}" → "Em produção" (automático, 1º apontamento de produção)` });
+      });
     }
   }
   if (mod.key === "ordens" && data.molde) {
@@ -273,10 +282,12 @@ export async function createRecord(repo: DataRepository, user: SessionUser, modu
   if (moduleKey === "ponto") throw new TRPCError({ code: "FORBIDDEN", message: PONTO_SO_NO_RELOGIO });
   const data = validateInput(mod, input, "create");
   if (mod.autoCode) data[mod.autoCode.field] = await nextCode(repo, user.empresaId, mod);
-  await applyRules(repo, user.empresaId, mod, data);
+  const efeitos: Efeito[] = [];
+  await applyRules(repo, user, mod, data, undefined, efeitos);
   await assertUnique(repo, user.empresaId, mod, data);
   const record = await repo.insert<RecordData>(moduleKey, user.empresaId, data, { actor: actorOf(user), demo: opts.demo });
   await audit(repo, user.empresaId, user, { acao: "criar", modulo: moduleKey, registroId: record.id, resumo: `${mod.singular} ${describe(mod, data)}` });
+  for (const efeito of efeitos) await efeito();
   return getRecord(repo, user.empresaId, moduleKey, record.id);
 }
 
@@ -290,10 +301,12 @@ export async function updateRecord(repo: DataRepository, user: SessionUser, modu
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
   const data = validateInput(mod, input, "update");
   if (mod.autoCode) delete data[mod.autoCode.field];
-  await applyRules(repo, user.empresaId, mod, data, existing);
+  await applyRules(repo, user, mod, data, existing);
   await assertUnique(repo, user.empresaId, mod, { ...existing.data, ...data }, id);
   await repo.update<RecordData>(moduleKey, user.empresaId, id, data, actorOf(user));
-  await audit(repo, user.empresaId, user, { acao: "editar", modulo: moduleKey, registroId: id, resumo: `${mod.singular} ${describe(mod, { ...existing.data, ...data })}` });
+  // B-07: a trilha guarda o antes → depois de cada campo alterado
+  const mudancas = describeChanges(mod, existing.data, data);
+  await audit(repo, user.empresaId, user, { acao: "editar", modulo: moduleKey, registroId: id, resumo: `${mod.singular} ${describe(mod, { ...existing.data, ...data })}${mudancas ? ` — ${mudancas}` : " (sem alterações)"}` });
   return getRecord(repo, user.empresaId, moduleKey, id);
 }
 
@@ -306,6 +319,20 @@ export async function deleteRecord(repo: DataRepository, user: SessionUser, modu
   await repo.softDelete(moduleKey, user.empresaId, id, actorOf(user));
   await audit(repo, user.empresaId, user, { acao: "excluir", modulo: moduleKey, registroId: id, resumo: `${mod.singular} ${describe(mod, existing.data)}` });
   return { success: true as const };
+}
+
+const valorAuditoria = (value: unknown) => {
+  if (value === undefined || value === null || value === "") return "(vazio)";
+  const texto = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return texto.length > 80 ? `${texto.slice(0, 77)}...` : texto;
+};
+
+/** B-07: "Valor: 10 → 999999; Status: Em aberto → Pago" (só os campos que mudaram; sem campos de senha). */
+export function describeChanges(mod: ModuleDef, before: RecordData, patch: RecordData): string {
+  return Object.keys(patch)
+    .filter(key => !/senha|password|hash/i.test(key) && valorAuditoria(patch[key]) !== valorAuditoria(before[key]))
+    .map(key => `${columnLabel(mod, key)}: ${valorAuditoria(before[key])} → ${valorAuditoria(patch[key])}`)
+    .join("; ");
 }
 
 function describe(mod: ModuleDef, data: RecordData): string {

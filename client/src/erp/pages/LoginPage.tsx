@@ -33,7 +33,9 @@ export default function LoginPage() {
     event.preventDefault();
     setError(null);
     try {
-      const me = await login.mutateAsync({ identificador: identificador.trim(), password });
+      // B-08: o login por usuário/matrícula tem escopo de empresa; outra empresa entra com /login?empresa=<id>
+      const empresa = new URLSearchParams(window.location.search).get("empresa")?.trim() || undefined;
+      const me = await login.mutateAsync({ identificador: identificador.trim(), password, empresa });
       toast.dismiss();
       utils.auth.me.setData(undefined, me);
       toast.success("Sessão iniciada", { description: `${me.nome} · ${me.perfil}` });

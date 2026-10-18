@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import type { CookieOptions, Request, Response } from "express";
 import { parse as parseCookie } from "cookie";
 import { PERMISSION_KEYS, PERFIS, type AccessLevel, type Permissions } from "@shared/erp/modules";
@@ -6,6 +7,7 @@ import type { DataRepository, StoredRecord } from "./repository";
 import { hashPassword, verifyPassword } from "./password";
 import { identifierKind, normalizeIdentifier, normalizeUsername } from "@shared/erp/account";
 import type { SessionData, SessionUser, UserData } from "./types";
+import { publicEmpresaId } from "./store";
 
 export const SESSION_COOKIE = "injetaflow_session";
 export const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 h
@@ -61,6 +63,25 @@ export function resetLoginLimiter() {
   failures.clear();
 }
 
+/**
+ * B-12: tentativas da senha atual (troca de senha, e-mail ou nome de usuário da própria conta) têm o
+ * mesmo limite do login, por usuário: 5 erros em 15 minutos → TOO_MANY_REQUESTS. Uma sessão roubada
+ * não serve para descobrir a senha por força bruta.
+ */
+export const MAX_FALHAS_SENHA_ATUAL = 5;
+export const SENHA_ATUAL_BLOQUEADA = "Muitas tentativas com a senha atual errada. Aguarde 15 minutos e tente de novo.";
+
+export function conferirSenhaAtual(user: StoredRecord<UserData>, senhaAtual: string | undefined, opts: { code: "BAD_REQUEST" | "FORBIDDEN"; ausente: string }) {
+  const key = `senha-atual|${user.id}`;
+  if (isLoginLocked(key, Date.now(), MAX_FALHAS_SENHA_ATUAL)) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: SENHA_ATUAL_BLOQUEADA });
+  if (!senhaAtual) throw new TRPCError({ code: opts.code, message: opts.ausente });
+  if (!verifyPassword(senhaAtual, user.data.senhaHash)) {
+    registerLoginFailure(key);
+    throw new TRPCError({ code: opts.code, message: "Senha atual incorreta." });
+  }
+  clearLoginFailures(key);
+}
+
 // ---------- usuários ----------
 export async function findUserByEmail(repo: DataRepository, email: string) {
   const normalized = normalizeEmail(email);
@@ -77,18 +98,33 @@ export async function findUserByUsername(repo: DataRepository, empresaId: string
  * Login flexível: identifica se o texto é e-mail, nome de usuário ou matrícula.
  * Com "@" é e-mail; sem "@", procura primeiro por nome de usuário e depois por matrícula
  * (comparação sem diferenciar maiúsculas). Devolve os candidatos na ordem de preferência.
+ *
+ * B-08: nome de usuário e matrícula são únicos só dentro da empresa, então a busca tem escopo de
+ * empresa (`escoparEmpresa`): cada tentativa é conferida em UMA empresa, nunca "na que a senha bater".
  */
-export async function findLoginCandidates(repo: DataRepository, identifier: string): Promise<StoredRecord<UserData>[]> {
+export async function findLoginCandidates(repo: DataRepository, identifier: string, empresa?: string | null): Promise<StoredRecord<UserData>[]> {
   const id = normalizeIdentifier(identifier);
   if (!id) return [];
   if (identifierKind(id) === "email") {
     const user = await findUserByEmail(repo, id);
-    return user ? [user] : [];
+    return escoparEmpresa(user ? [user] : [], empresa);
   }
   const byUsername = await repo.findAllGlobal<UserData>(USERS, data => normalizeUsername(data.username ?? "") === id);
   const byMatricula = await repo.findAllGlobal<UserData>(USERS, data => String(data.matricula ?? "").trim().toLowerCase() === id);
   const seen = new Set<string>();
-  return [...byUsername, ...byMatricula].filter(record => (seen.has(record.id) ? false : (seen.add(record.id), true)));
+  return escoparEmpresa([...byUsername, ...byMatricula].filter(record => (seen.has(record.id) ? false : (seen.add(record.id), true))), empresa);
+}
+
+/**
+ * B-08: com `empresa` informada (login com `?empresa=`), só contas dessa empresa. Sem ela: se o
+ * identificador existe numa empresa só, é ela; se existe em várias, vale só a empresa padrão
+ * (`INJETAFLOW_PUBLIC_EMPRESA`, a da instalação). Nunca se testa a senha em várias empresas.
+ */
+export function escoparEmpresa<T extends { empresaId: string }>(candidates: T[], empresa?: string | null, padrao = publicEmpresaId()): T[] {
+  const alvo = empresa?.trim();
+  if (alvo) return candidates.filter(c => c.empresaId === alvo);
+  if (new Set(candidates.map(c => c.empresaId)).size <= 1) return candidates;
+  return candidates.filter(c => c.empresaId === padrao);
 }
 
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";

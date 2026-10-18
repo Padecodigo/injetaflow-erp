@@ -1,6 +1,7 @@
-import express, { type Express } from "express";
+import { type Express } from "express";
 import fs from "fs";
 import { type Server } from "http";
+import { enviarEstatico, estaticosComCompressao } from "./static";
 import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -66,11 +67,15 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // compressão (br/gzip) e cache HTTP dos arquivos do build
+  app.use(estaticosComCompressao(distPath));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
     if (req.originalUrl.startsWith("/api/")) return res.status(404).json({ error: "Rota de API inexistente." });
-    res.status(spaStatus(req.originalUrl)).sendFile(path.resolve(distPath, "index.html"));
+    // sem o build do front, responde aqui mesmo (o handler padrão do Express trocaria os cabeçalhos de segurança)
+    if (!enviarEstatico(req, res, path.resolve(distPath), "index.html", spaStatus(req.originalUrl))) {
+      res.status(503).type("text/plain").send("Front-end não encontrado: rode pnpm build.");
+    }
   });
 }

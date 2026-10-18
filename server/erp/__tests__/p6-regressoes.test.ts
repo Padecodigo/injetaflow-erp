@@ -51,11 +51,14 @@ describe("P6-01: não administrador com 'Usuários: editar' não escala privilé
     await expect(gestora.caller.usuarios.update({ id: gestoraMe.id, data: { nome: "Gestora Renomeada", perfil: "Gestor", permissoes: gestoraMe.permissoes } })).resolves.toMatchObject({ nome: "Gestora Renomeada" });
   });
 
-  it("ao editar outra pessoa, não concede módulos que não possui, mas mantém os que ela já tinha", async () => {
-    const { repo, empresaId, gestora } = await cenario();
-    const alvo = await createUser(repo, null, empresaId, { ...base("alvo@teste.local", "ALV-1"), perfil: "Supervisor", permissoes: { financeiro: "editar" } });
-    await expect(gestora.caller.usuarios.update({ id: alvo.id, data: { permissoes: { financeiro: "editar", configuracoes: "ver" } } })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(gestora.caller.usuarios.update({ id: alvo.id, data: { setor: "Qualidade", permissoes: { financeiro: "editar", producao: "ver" } } })).resolves.toMatchObject({ setor: "Qualidade", permissoes: { financeiro: "editar", producao: "ver" } });
+  it("ao editar outra pessoa (abaixo dela), não concede módulos que não possui", async () => {
+    const { repo, empresaId, gestora } = await cenario(); // gestora: usuarios editar, producao editar, qualidade ver
+    const alvo = await createUser(repo, null, empresaId, { ...base("alvo@teste.local", "ALV-1"), perfil: "Operador", permissoes: { producao: "ver" } });
+    await expect(gestora.caller.usuarios.update({ id: alvo.id, data: { permissoes: { producao: "ver", configuracoes: "ver" } } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(gestora.caller.usuarios.update({ id: alvo.id, data: { setor: "Qualidade", permissoes: { producao: "ver", qualidade: "ver" } } })).resolves.toMatchObject({ setor: "Qualidade", permissoes: { producao: "ver", qualidade: "ver" } });
+    // B-01 (auditoria back): quem tem módulo além do da gestora não é alterado por ela em nada (antes: setor e módulos passavam)
+    const acima = await createUser(repo, null, empresaId, { ...base("acima@teste.local", "ACI-1"), perfil: "Supervisor", permissoes: { financeiro: "editar" } });
+    await expect(gestora.caller.usuarios.update({ id: acima.id, data: { setor: "Qualidade", permissoes: { financeiro: "editar", producao: "ver" } } })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("administrador: não se rebaixa, não se desativa, não se exclui; o último admin ativo nunca sai", async () => {
@@ -167,8 +170,10 @@ describe("R-01: não administrador não assume a conta de quem tem mais acesso (
     expect(depois.data).toMatchObject({ email: "sup@teste.local", username: "sup", status: "Ativo" });
     const anon = await callerFor(repo);
     await expect(anon.caller.auth.login({ identificador: "sup", password: senhaOriginal })).resolves.toBeTruthy();
-    // mesmo valor enviado (formulário completo) não conta como alteração; dados não sensíveis seguem editáveis
-    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { nome: "Supervisor Renomeado", setor: "Qualidade", email: "SUP@teste.local", username: "sup", status: "Ativo" } })).resolves.toMatchObject({ nome: "Supervisor Renomeado", setor: "Qualidade" });
+    // B-01 (auditoria back): nem dados "não sensíveis" (nome, setor) de quem tem mais acesso; antes passavam e
+    // abriam o caminho rebaixar → trocar a senha
+    await expect(gestora.caller.usuarios.update({ id: sup.id, data: { nome: "Supervisor Renomeado", setor: "Qualidade", email: "SUP@teste.local", username: "sup", status: "Ativo" } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await repo.get<UserData>(USERS, empresaId, sup.id))!.data).toMatchObject({ nome: expect.not.stringMatching(/Renomeado/) });
   });
 
   it("nível maior no mesmo módulo também excede (qualidade: editar > ver)", async () => {

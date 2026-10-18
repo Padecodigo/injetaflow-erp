@@ -5,12 +5,12 @@ import { MODULE_KEYS, MODULES, hasPermission, type ModuleKey } from "@shared/erp
 import { assertPermission, moduleProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import type { TrpcContext } from "../_core/context";
 import {
-  authenticate, clearLoginFailures, clearSessionCookie, createSession, destroySession, destroyUserSessions, hashUserPassword,
+  authenticate, clearLoginFailures, clearSessionCookie, conferirSenhaAtual, createSession, destroySession, destroyUserSessions, hashUserPassword,
   findLoginCandidates, isLoginLocked, MAX_FAILURES_PER_ACCOUNT, MAX_FAILURES_PER_EMAIL, registerLoginFailure, setSessionCookie, toSessionUser, USERS,
 } from "./auth";
-import { verifyPassword } from "./password";
-import { actorOf, audit, type AuditEntry } from "./audit";
+import { AUTOR_LOGIN, actorOf, audit, type AuditEntry } from "./audit";
 import { consumeRawMaterial, numericSchema, createRecord, deleteRecord, exportCsv, flatten, getRecord, listRecords, PONTO_IMUTAVEL, PONTO_SO_NO_RELOGIO, summarize, updateRecord, type RecordData } from "./records";
+import type { StoredRecord } from "./repository";
 import { historico, presenca, relatorio, relatorioCsv } from "./rh";
 import { auditarNegacaoPonto, type RotaNegadaPonto } from "./ponto-negacoes";
 import { dashboardSummary } from "./dashboard";
@@ -20,10 +20,11 @@ import { publicEmpresaId } from "./store";
 import { clientIp } from "./net";
 import type { SessionUser, UserData } from "./types";
 import type { DataRepository } from "./repository";
-import { normalizeText, todayIso } from "./text";
+import { dataDeCalendarioValida, normalizeText, todayIso } from "./text";
 
 const moduleKey = z.enum(MODULE_KEYS);
-const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida");
+// B-13: além do formato, a data precisa existir no calendário
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida").refine(dataDeCalendarioValida, "Data inválida");
 
 const listInput = z.object({
   module: moduleKey,
@@ -43,6 +44,34 @@ function ipOf(ctx: TrpcContext): string {
 
 const permOf = (key: ModuleKey) => MODULES[key].permission;
 
+/** B-14: campos que `records.options` devolve: só os declarados num `ref` que aponta para o módulo. */
+export function camposDeReferencia(module: ModuleKey): Set<string> {
+  const campos = new Set<string>();
+  for (const mod of Object.values(MODULES)) {
+    for (const field of mod.fields) {
+      if (field.ref?.module !== module) continue;
+      campos.add(field.ref.field);
+      if (field.ref.labelField) campos.add(field.ref.labelField);
+    }
+  }
+  return campos;
+}
+
+/** B-07: exportações em massa ficam na trilha (quem, o quê, filtros e quantidade). */
+async function auditarExportacao(ctx: { repo: DataRepository; user: SessionUser }, modulo: string, rotulo: string, count: number, filtros: Record<string, unknown>) {
+  const usados = Object.entries(filtros)
+    .flatMap(([key, value]) => (value && typeof value === "object" ? Object.entries(value).map(([k, v]) => [`${key}.${k}`, v] as const) : [[key, value] as const]))
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`);
+  await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "exportar", modulo, resumo: `Exportação CSV de ${rotulo}: ${count} linha(s)${usados.length ? ` · filtros: ${usados.join(", ")}` : ""}` });
+}
+
+/** B-07: falha de login e bloqueio na trilha da(s) empresa(s) da conta (ou da empresa padrão), sem a senha. */
+async function auditarFalhaLogin(repo: DataRepository, candidates: StoredRecord<UserData>[], acao: string, resumo: string) {
+  const empresas = candidates.length ? Array.from(new Set(candidates.map(c => c.empresaId))) : [publicEmpresaId()];
+  for (const empresaId of empresas) await audit(repo, empresaId, null, { autor: AUTOR_LOGIN, acao, modulo: "auth", resumo });
+}
+
 export const authRouter = router({
   me: publicProcedure.query(({ ctx }) => ctx.user),
   login: publicProcedure
@@ -51,24 +80,33 @@ export const authRouter = router({
       identificador: z.string().trim().max(200).optional(),
       email: z.string().trim().max(200).optional(),
       password: z.string().min(1, "Informe a senha").max(200),
+      // B-08: empresa do login (ex.: /login?empresa=empresa-b); sem ela, ver escoparEmpresa
+      empresa: z.string().trim().max(80).regex(/^[a-z0-9][a-z0-9_-]*$/i, "Empresa inválida").optional().or(z.literal("").transform(() => undefined)),
     }).refine(value => Boolean((value.identificador || value.email || "").trim()), { message: "Informe o e-mail, usuário ou matrícula", path: ["identificador"] }))
     .mutation(async ({ ctx, input }) => {
       const identificador = normalizeIdentifier(input.identificador || input.email || "");
       // limite e bloqueio pelo identificador normalizado (por IP e global) e pela conta encontrada,
       // para que alternar e-mail/usuário/matrícula da mesma conta não multiplique as tentativas
-      const ipKey = `${ipOf(ctx)}|${identificador}`;
-      const idKey = `id|${identificador}`;
-      const candidates = await findLoginCandidates(ctx.repo, identificador);
+      const escopo = input.empresa ? `${input.empresa}|` : "";
+      const ipKey = `${ipOf(ctx)}|${escopo}${identificador}`;
+      const idKey = `id|${escopo}${identificador}`;
+      const candidates = await findLoginCandidates(ctx.repo, identificador, input.empresa);
       const accountKeys = candidates.map(c => `conta|${c.id}`);
-      if (isLoginLocked(ipKey) || isLoginLocked(idKey, Date.now(), MAX_FAILURES_PER_EMAIL) || accountKeys.some(k => isLoginLocked(k, Date.now(), MAX_FAILURES_PER_ACCOUNT))) {
+      const limites: [string, number | undefined][] = [[ipKey, undefined], [idKey, MAX_FAILURES_PER_EMAIL], ...accountKeys.map(k => [k, MAX_FAILURES_PER_ACCOUNT] as [string, number])];
+      const bloqueado = () => limites.some(([key, max]) => isLoginLocked(key, Date.now(), max));
+      if (bloqueado()) {
         throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde 15 minutos ou fale com o administrador." });
       }
       const user = await authenticate(ctx.repo, identificador, input.password, candidates);
+      const descricao = `identificador "${identificador.slice(0, 80)}"${input.empresa ? ` (empresa ${input.empresa})` : ""} · IP ${ipOf(ctx)}`;
       if (user === "inativo") {
+        await auditarFalhaLogin(ctx.repo, candidates, "login negado", `Login negado: usuário inativo · ${descricao}`);
         throw new TRPCError({ code: "FORBIDDEN", message: "Usuário inativo. Fale com o administrador para reativar o acesso." });
       }
       if (!user) {
         for (const key of [ipKey, idKey, ...accountKeys]) registerLoginFailure(key);
+        await auditarFalhaLogin(ctx.repo, candidates, "login falhou", `Falha de login (credenciais inválidas) · ${descricao}`);
+        if (bloqueado()) await auditarFalhaLogin(ctx.repo, candidates, "bloqueio", `Login bloqueado por 15 minutos após tentativas seguidas · ${descricao}`);
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário, e-mail, matrícula ou senha inválidos." });
       }
       for (const key of [ipKey, idKey, `conta|${user.id}`]) clearLoginFailures(key);
@@ -93,7 +131,9 @@ export const authRouter = router({
     }, { error: "Informe a senha atual e a nova senha." }))
     .mutation(async ({ ctx, input }) => {
       const record = await ctx.repo.get<UserData>(USERS, ctx.user.empresaId, ctx.user.id);
-      if (!record || !verifyPassword(input.atual, record.data.senhaHash)) throw new TRPCError({ code: "BAD_REQUEST", message: "Senha atual incorreta." });
+      if (!record) throw new TRPCError({ code: "BAD_REQUEST", message: "Senha atual incorreta." });
+      // B-12: 5 senhas atuais erradas em 15 minutos → TOO_MANY_REQUESTS
+      conferirSenhaAtual(record, input.atual, { code: "BAD_REQUEST", ausente: "Informe a senha atual." });
       if (input.atual === input.nova) throw new TRPCError({ code: "BAD_REQUEST", message: "A nova senha deve ser diferente da atual." });
       await ctx.repo.update<UserData>(USERS, ctx.user.empresaId, ctx.user.id, { senhaHash: hashUserPassword(input.nova) }, actorOf(ctx.user));
       await destroyUserSessions(ctx.repo, ctx.user.id, ctx.sessionToken ?? undefined);
@@ -132,6 +172,10 @@ export const recordsRouter = router({
       const referencing = Object.values(MODULES).some(mod => mod.fields.some(f => f.ref?.module === input.module) && hasPermission(ctx.user, mod.permission, "editar"));
       if (!referencing) assertPermission(ctx.user, permOf(input.module), "ver");
     }
+    // B-14: só campos declarados em algum `ref` para este módulo (nada de "constructor" ou campos internos)
+    const permitidos = camposDeReferencia(input.module);
+    const recusados = [input.field, input.labelField].filter((campo): campo is string => Boolean(campo) && !permitidos.has(campo!));
+    if (recusados.length) throw new TRPCError({ code: "BAD_REQUEST", message: `Campo não disponível para opções: ${recusados.join(", ")}.` });
     const { items } = await ctx.repo.list<RecordData>(input.module, ctx.user.empresaId, { sort: (a, b) => String(a.data[input.field]).localeCompare(String(b.data[input.field]), "pt-BR", { numeric: true }) });
     return items.map(item => ({ value: String(item.data[input.field] ?? ""), label: input.labelField ? String(item.data[input.labelField] ?? "") : "", status: String(item.data.status ?? "") })).filter(option => option.value);
   }),
@@ -160,7 +204,9 @@ export const recordsRouter = router({
   exportCsv: protectedProcedure.input(listInput.omit({ page: true, pageSize: true })).mutation(async ({ ctx, input }) => {
     assertPermission(ctx.user, permOf(input.module), "ver");
     const { module, ...query } = input;
-    return exportCsv(ctx.repo, ctx.user.empresaId, module, query);
+    const result = await exportCsv(ctx.repo, ctx.user.empresaId, module, query);
+    await auditarExportacao(ctx, module, MODULES[module].label, result.count, query);
+    return result;
   }),
   consumirMateriaPrima: moduleProcedure("materia_prima", "editar")
     .input(z.object({ id: z.string().min(1), quantidade: numericSchema({ label: "Quantidade (kg)", min: 0.001 }), documento: z.string().max(120).optional() }))
@@ -202,17 +248,18 @@ export const recordsRouter = router({
 
 export const usuariosRouter = router({
   list: moduleProcedure("usuarios", "ver")
-    .input(z.object({ search: z.string().max(200).optional(), perfil: z.string().optional(), status: z.string().optional(), setor: z.string().optional(), page: z.number().int().min(1).optional(), pageSize: z.number().int().min(1).max(100).optional() }))
+    .input(z.object({ search: z.string().max(200).optional(), perfil: z.string().max(60).optional(), status: z.string().max(60).optional(), setor: z.string().max(60).optional(), page: z.number().int().min(1).max(100000).optional(), pageSize: z.number().int().min(1).max(100).optional() }))
     .query(({ ctx, input }) => listUsers(ctx.repo, ctx.user.empresaId, input)),
   create: moduleProcedure("usuarios", "editar").input(userCreateSchema).mutation(({ ctx, input }) => createUser(ctx.repo, ctx.user, ctx.user.empresaId, input)),
-  update: moduleProcedure("usuarios", "editar").input(z.object({ id: z.string().min(1), data: userUpdateSchema })).mutation(({ ctx, input }) => updateUser(ctx.repo, ctx.user, input.id, input.data)),
+  update: moduleProcedure("usuarios", "editar").input(z.object({ id: z.string().min(1), data: userUpdateSchema })).mutation(({ ctx, input }) => updateUser(ctx.repo, ctx.user, input.id, input.data, { sessionToken: ctx.sessionToken })),
   remove: moduleProcedure("usuarios", "editar").input(z.object({ id: z.string().min(1) })).mutation(({ ctx, input }) => deleteUser(ctx.repo, ctx.user, input.id)),
-  exportCsv: moduleProcedure("usuarios", "ver").input(z.object({ search: z.string().optional(), perfil: z.string().optional(), status: z.string().optional() })).mutation(async ({ ctx, input }) => {
+  exportCsv: moduleProcedure("usuarios", "ver").input(z.object({ search: z.string().max(200).optional(), perfil: z.string().max(60).optional(), status: z.string().max(60).optional() })).mutation(async ({ ctx, input }) => {
     const { toCsv } = await import("./csv");
     const all = await listUsers(ctx.repo, ctx.user.empresaId, { ...input, pageSize: 100 });
     const items = [...all.items];
     for (let page = 2; page <= all.pages; page++) items.push(...(await listUsers(ctx.repo, ctx.user.empresaId, { ...input, page, pageSize: 100 })).items);
     const csv = toCsv(["Nome", "E-mail", "Usuário", "Matrícula", "Setor", "Perfil", "Módulos", "Status", "Último acesso"], items.map(u => [u.nome, u.email, u.username ?? "", u.matricula, u.setor, u.perfil, u.perfil === "Administrador" ? "Todos" : Object.entries(u.permissoes).map(([k, v]) => `${k}:${v}`).join(", "), u.status, u.ultimoAcesso ?? ""]));
+    await auditarExportacao(ctx, "usuarios", "Usuários (dados pessoais)", items.length, input);
     return { filename: `usuarios-${todayIso()}.csv`, csv, count: items.length };
   }),
 });
@@ -225,7 +272,11 @@ export const rhRouter = router({
   // REMOVIDA. O ERP não registra ponto (só o relógio oficial, o REP). Quem chamar recebe 403 com orientação
   // (errorFormatter em server/_core/trpc.ts), sem gravar nada.
   relatorio: moduleProcedure("rh", "ver").input(relatorioInput).query(({ ctx, input }) => relatorio(ctx.repo, ctx.user.empresaId, input)),
-  relatorioCsv: moduleProcedure("rh", "ver").input(relatorioInput).mutation(({ ctx, input }) => relatorioCsv(ctx.repo, ctx.user.empresaId, input)),
+  relatorioCsv: moduleProcedure("rh", "ver").input(relatorioInput).mutation(async ({ ctx, input }) => {
+    const result = await relatorioCsv(ctx.repo, ctx.user.empresaId, input);
+    await auditarExportacao(ctx, "rh", "Relatório de ponto", result.count, input);
+    return result;
+  }),
   historico: moduleProcedure("rh", "ver").input(z.object({ matricula: z.string().min(1).max(40) })).query(({ ctx, input }) => historico(ctx.repo, ctx.user.empresaId, input.matricula)),
   // N07: gestor/RH analisa as ocorrências (aprovar ou recusar, com parecer e auditoria)
   ocorrencias: moduleProcedure("rh", "ver")
@@ -241,7 +292,8 @@ export const rhRouter = router({
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
       if (record.data.status !== "Pendente") throw new TRPCError({ code: "BAD_REQUEST", message: `Esta ocorrência já está "${String(record.data.status)}".` });
       if (input.decisao === "Recusada" && !input.parecer) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o motivo da recusa no parecer." });
-      if (normalizeText(record.data.matricula) === normalizeText(ctx.user.matricula)) throw new TRPCError({ code: "FORBIDDEN", message: "Você não pode analisar a sua própria ocorrência." });
+      // B-03: a autoria é do usuário (ID), não da matrícula, que pode ser trocada; a matrícula fica como reforço
+      if (ehAutorDaOcorrencia(record, ctx.user) || normalizeText(record.data.matricula) === normalizeText(ctx.user.matricula)) throw new TRPCError({ code: "FORBIDDEN", message: "Você não pode analisar a sua própria ocorrência." });
       const updated = await ctx.repo.update<RecordData>("ocorrencias", ctx.user.empresaId, input.id, { status: input.decisao, parecer: input.parecer || undefined, analisadoPor: ctx.user.nome, analisadoEm: new Date().toISOString() }, actorOf(ctx.user));
       await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "ocorrencias", registroId: input.id, resumo: `Ocorrência ${input.decisao.toLowerCase()} (${String(record.data.tipo)} de ${String(record.data.nome)} em ${String(record.data.data)})${input.parecer ? `: ${input.parecer}` : ""}` });
       return flatten(updated!);
@@ -255,9 +307,19 @@ export const dashboardRouter = router({
 const OCORRENCIA_TIPOS = ["Justificativa de ausência", "Atraso", "Esquecimento de batida", "Ajuste de ponto", "Observação"] as const;
 const ocorrenciaInput = z.object({ tipo: z.enum(OCORRENCIA_TIPOS, { message: "Escolha o tipo da ocorrência." }), data: dateStr, descricao: z.string().trim().min(5, "Descreva a ocorrência (mínimo 5 caracteres).").max(2000) });
 
+/**
+ * B-03: a ocorrência pertence a quem a abriu (`usuarioId`, gravado desde esta versão, ou `createdBy`).
+ * Só registros antigos, sem nenhum dos dois, caem na comparação por matrícula.
+ */
+export function ehAutorDaOcorrencia(record: Pick<StoredRecord<RecordData>, "data" | "createdBy">, user: SessionUser): boolean {
+  const autor = (typeof record.data.usuarioId === "string" && record.data.usuarioId) || record.createdBy?.id;
+  if (autor) return autor === user.id;
+  return normalizeText(record.data.matricula) === normalizeText(user.matricula);
+}
+
 async function propriaPendente(ctx: { repo: DataRepository; user: SessionUser }, id: string) {
   const record = await ctx.repo.get<RecordData>("ocorrencias", ctx.user.empresaId, id);
-  if (!record || normalizeText(record.data.matricula) !== normalizeText(ctx.user.matricula)) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
+  if (!record || !ehAutorDaOcorrencia(record, ctx.user)) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
   if (record.data.status !== "Pendente") throw new TRPCError({ code: "BAD_REQUEST", message: `Esta ocorrência já está "${String(record.data.status)}" e não pode mais ser alterada.` });
   return record;
 }
@@ -276,14 +338,13 @@ export const perfilRouter = router({
   novaOcorrencia: protectedProcedure
     .input(ocorrenciaInput)
     .mutation(async ({ ctx, input }) => {
-      const record = await ctx.repo.insert<RecordData>("ocorrencias", ctx.user.empresaId, { ...input, matricula: ctx.user.matricula, nome: ctx.user.nome, status: "Pendente" }, { actor: actorOf(ctx.user) });
+      const record = await ctx.repo.insert<RecordData>("ocorrencias", ctx.user.empresaId, { ...input, matricula: ctx.user.matricula, nome: ctx.user.nome, usuarioId: ctx.user.id, status: "Pendente" }, { actor: actorOf(ctx.user) });
       await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "criar", modulo: "ocorrencias", registroId: record.id, resumo: `${input.tipo} em ${input.data}` });
       return flatten(record);
     }),
   // N07: o colaborador acompanha, edita e cancela as próprias ocorrências enquanto estiverem pendentes
   minhasOcorrencias: protectedProcedure.query(async ({ ctx }) => {
-    const wanted = normalizeText(ctx.user.matricula);
-    const { items } = await ctx.repo.list<RecordData>("ocorrencias", ctx.user.empresaId, { filter: data => normalizeText(data.matricula) === wanted, limit: 200 });
+    const { items } = await ctx.repo.list<RecordData>("ocorrencias", ctx.user.empresaId, { filter: (data, record) => ehAutorDaOcorrencia({ data, createdBy: record.createdBy }, ctx.user), limit: 200 });
     return items.map(flatten);
   }),
   editarOcorrencia: protectedProcedure
@@ -323,7 +384,9 @@ export const configRouter = router({
     const { items } = await ctx.repo.list<RecordData>("empresa_config", ctx.user.empresaId, { limit: 1 });
     if (items[0]) await ctx.repo.update("empresa_config", ctx.user.empresaId, items[0].id, input, actorOf(ctx.user));
     else await ctx.repo.insert("empresa_config", ctx.user.empresaId, input, { actor: actorOf(ctx.user) });
-    await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "configuracoes", resumo: "Dados da empresa atualizados" });
+    // B-07: antes → depois também nas configurações
+    const mudancas = Object.entries(input).filter(([key, value]) => String(items[0]?.data[key] ?? "") !== String(value ?? "")).map(([key, value]) => `${key}: ${String(items[0]?.data[key] ?? "(vazio)")} → ${String(value ?? "(vazio)")}`).join("; ");
+    await audit(ctx.repo, ctx.user.empresaId, ctx.user, { acao: "editar", modulo: "configuracoes", resumo: `Dados da empresa atualizados${mudancas ? ` — ${mudancas}` : " (sem alterações)"}` });
     return { success: true } as const;
   }),
   auditoria: moduleProcedure("configuracoes", "ver").input(z.object({ search: z.string().max(200).optional(), page: z.number().int().min(1).optional(), pageSize: z.number().int().min(1).max(100).optional() })).query(async ({ ctx, input }) => {

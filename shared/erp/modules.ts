@@ -460,6 +460,22 @@ export function permissionsBeyond(
   });
 }
 
+/**
+ * B-01: o alvo tem acesso ESTRITAMENTE menor que o do ator. Quem não é administrador só altera ou
+ * exclui pessoas abaixo dele: nada além do que ele tem e pelo menos um módulo (ou nível) a menos.
+ * Acesso igual também fica com o administrador (impede tomar a conta de um par).
+ */
+export function accessStrictlyBelow(
+  actor: { perfil?: string | null; permissoes?: Permissions | null } | null | undefined,
+  target: { perfil?: string | null; permissoes?: Permissions | null }
+): boolean {
+  if (isAdminPerfil(actor?.perfil)) return true;
+  if (!actor || isAdminPerfil(target.perfil)) return false;
+  if (permissionsBeyond(actor, target).length) return false;
+  const nivel = (level: unknown) => (level === "editar" ? 2 : level === "ver" ? 1 : 0);
+  return PERMISSION_KEYS.some(key => nivel(actor.permissoes?.[key]) > nivel(target.permissoes?.[key]));
+}
+
 export const COLUMN_LABELS: Record<string, string> = {
   progresso: "Progresso",
   createdAt: "Registrado em",

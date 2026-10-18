@@ -115,6 +115,8 @@ client/public/__manus__/version.json
 # InjetaFlow: dados locais (persistência JSON e anexos) e artefatos de teste
 .data/
 .data-*/
+# logs de depuração do modo dev (coletor do navegador)
+.manus-logs/
 test-results/
 playwright-report/
 blob-report/

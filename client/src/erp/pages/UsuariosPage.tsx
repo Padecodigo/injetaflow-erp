@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Download, KeyRound, Loader2, Pencil, Search, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
 import { toast } from "sonner";
-import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, permissionsBeyond, type Perfil, type Permissions } from "@shared/erp/modules";
+import { PERFIL_PRESETS, PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, accessStrictlyBelow, permissionsBeyond, type Perfil, type Permissions } from "@shared/erp/modules";
 import { PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "@shared/erp/account";
 import { trpc } from "@/lib/trpc";
 import { useSession, type SessionUser } from "../session";
@@ -18,6 +18,12 @@ const USUARIOS_TOAST = "usuarios-acao";
 function alemDoMeu(me: SessionUser | null | undefined, row: UserRow) {
   if (!me || row.id === me.id) return [];
   return permissionsBeyond(me, row);
+}
+
+/** B-01: quem não é administrador só altera ou exclui pessoas com acesso estritamente menor (o servidor também bloqueia). */
+function travadoParaMim(me: SessionUser | null | undefined, row: UserRow) {
+  if (!me || row.id === me.id) return false;
+  return !accessStrictlyBelow(me, row);
 }
 
 function randomPassword() {
@@ -55,9 +61,9 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     }
     return out;
   };
-  // R-01: credenciais e status de quem tem mais acesso que eu ficam com o administrador
+  // R-01 + B-01: quem tem acesso maior OU IGUAL ao meu fica inteiro com o administrador
   const excesso = editing ? alemDoMeu(me, user!) : [];
-  const credTravadas = excesso.length > 0;
+  const credTravadas = editing && travadoParaMim(me, user!);
   const perfisDisponiveis = PERFIS.filter(p => meIsAdmin || p !== "Administrador");
   const [username, setUsername] = useState(user?.username ?? "");
   const [nome, setNome] = useState(user?.nome ?? "");
@@ -67,6 +73,9 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   const [perfil, setPerfil] = useState<Perfil>((user?.perfil as Perfil) ?? "Operador");
   const [status, setStatus] = useState<"Ativo" | "Inativo">(user?.status ?? "Ativo");
   const [senha, setSenha] = useState("");
+  // B-02: trocar a PRÓPRIA senha, e-mail ou nome de usuário por aqui exige a senha atual
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const pedeSenhaAtual = self && (Boolean(senha) || email.trim().toLowerCase() !== (user?.email ?? "") || username.trim().toLowerCase() !== (user?.username ?? ""));
   const [permissoes, setPermissoes] = useState<Permissions>(() => user?.permissoes ?? clip(PERFIL_PRESETS.Operador));
   const [error, setError] = useState<string | null>(null);
   const busy = create.isPending || update.isPending;
@@ -82,7 +91,7 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
     setError(null);
     try {
       if (editing) {
-        await update.mutateAsync({ id: user!.id, data: { nome, ...(credTravadas ? {} : { email, ...(username.trim() ? { username: username.trim() } : {}) }), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], ...(self ? {} : { perfil, permissoes }), ...(self || credTravadas ? {} : { status }), novaSenha: credTravadas ? undefined : senha || undefined } });
+        await update.mutateAsync({ id: user!.id, data: { nome, ...(credTravadas ? {} : { email, ...(username.trim() ? { username: username.trim() } : {}) }), ...(canEditMatricula ? { matricula } : {}), setor: setor as (typeof SETORES)[number], ...(self ? {} : { perfil, permissoes }), ...(self || credTravadas ? {} : { status }), novaSenha: credTravadas ? undefined : senha || undefined, ...(pedeSenhaAtual ? { senhaAtual } : {}) } });
       } else {
         await create.mutateAsync({ nome, email, username: username.trim() || undefined, matricula, setor: setor as (typeof SETORES)[number], perfil, status, permissoes, senha });
       }
@@ -101,7 +110,7 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
   return (
     <Modal wide title={editing ? `Editar ${user!.nome}` : "Novo usuário"} eyebrow="Usuários e acessos" icon={<UserPlus size={20} />} description="Defina setor, perfil, matrícula e exatamente quais módulos a pessoa pode ver ou editar." onClose={onClose}>
       <form onSubmit={submit} aria-label={editing ? "Editar usuário" : "Novo usuário"}>
-        {credTravadas && <div className="erp-form-note" role="note" data-testid="credenciais-travadas">Esta pessoa tem acesso além do seu ({excesso.map(key => PERMISSION_LABELS[key]).join(", ")}). Senha, e-mail, nome de usuário e status só podem ser alterados pelo administrador.</div>}
+        {credTravadas && <div className="erp-form-note" role="note" data-testid="credenciais-travadas">{excesso.length ? <>Esta pessoa tem acesso além do seu ({excesso.map(key => PERMISSION_LABELS[key]).join(", ")}).</> : <>Esta pessoa tem acesso igual ao seu.</>} Somente o administrador pode alterar ou excluir esta pessoa.</div>}
         <div className="erp-form-grid">
           <label className="modal-field"><span>Nome completo *</span><input name="nome" required minLength={3} value={nome} onChange={e => setNome(e.target.value)} /></label>
           <label className="modal-field"><span>E-mail corporativo *</span><input name="email" type="email" required disabled={credTravadas} value={email} onChange={e => setEmail(e.target.value)} /></label>
@@ -117,6 +126,7 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
             </span>
             <small className="erp-muted">Entregue a senha à pessoa por um canal seguro. Ela pode trocá-la em Meu perfil.</small>
           </label>
+          {pedeSenhaAtual && <label className="modal-field erp-span-2"><span>Sua senha atual *</span><input name="senhaAtual" type="password" autoComplete="current-password" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} /><small className="erp-muted">Para trocar a sua própria senha, e-mail ou nome de usuário, confirme a senha atual.</small></label>}
         </div>
         <div className="access-section">
           <div className="access-section__heading"><div><span className="panel-kicker">Permissões por módulo</span><b>O que esta pessoa pode acessar?</b></div>{!meIsAdmin && !self && <small className="erp-muted">Você só concede módulos que você mesmo possui.</small>}<span className="selection-count">{isAdmin ? "Administrador: acesso total" : `${selected.length} módulo(s)`}</span></div>
@@ -141,7 +151,7 @@ function UserForm({ user, onClose }: { user?: UserRow | null; onClose: () => voi
           <div><b>{nome || "Nome do usuário"}</b><small>{matricula || "matrícula"} · {perfil} · {setor}</small><small>{isAdmin ? "Acesso a todos os módulos" : selected.map(key => PERMISSION_LABELS[key]).join(", ") || "Apenas Meu perfil"}</small></div>
         </div>
         {error && <div className="erp-form-error" role="alert">{error}</div>}
-        <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancelar</button><button className="button button--primary" disabled={busy}>{busy && <Loader2 size={15} className="erp-spin" />}{editing ? "Salvar alterações" : "Cadastrar usuário"}</button></div>
+        <div className="erp-modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancelar</button><button className="button button--primary" disabled={busy || credTravadas}>{busy && <Loader2 size={15} className="erp-spin" />}{editing ? "Salvar alterações" : "Cadastrar usuário"}</button></div>
       </form>
     </Modal>
   );
@@ -164,8 +174,8 @@ export default function UsuariosPage() {
   const remove = trpc.usuarios.remove.useMutation();
   // P6-01: só o administrador edita, desativa ou exclui administradores (o servidor também bloqueia)
   const protegido = (row: UserRow) => row.perfil === "Administrador" && me?.perfil !== "Administrador";
-  // R-01: status e exclusão de quem tem mais acesso que eu ficam com o administrador
-  const superior = (row: UserRow) => alemDoMeu(me, row).length > 0;
+  // R-01 + B-01: status e exclusão de quem tem acesso maior ou igual ao meu ficam com o administrador
+  const superior = (row: UserRow) => travadoParaMim(me, row);
   const exportCsv = trpc.usuarios.exportCsv.useMutation();
 
   const toggleStatus = async (row: UserRow) => {
