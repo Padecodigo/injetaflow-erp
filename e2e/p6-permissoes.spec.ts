@@ -118,10 +118,10 @@ test.describe("R-01: não administrador não assume a conta de quem tem mais ace
     await expect(dialog.getByTestId("credenciais-travadas")).toContainText("Financeiro");
     for (const campo of ['input[name="email"]', 'input[name="username"]', 'input[name="senha"]', 'select[name="status"]']) await expect(dialog.locator(campo), campo).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "Gerar" })).toBeDisabled();
-    // ainda pode ajustar dados não sensíveis (setor) e salvar
-    await dialog.locator('select[name="setor"]').selectOption("Qualidade");
-    await dialog.getByRole("button", { name: "Salvar alterações" }).click();
-    await expect(page.getByTestId("user-row").filter({ hasText: superior.email })).toContainText("Qualidade");
+    // B-01 (auditoria back): nem dados "não sensíveis" de quem tem mais acesso; o botão de salvar fica desabilitado
+    await expect(dialog.getByTestId("credenciais-travadas")).toContainText("Somente o administrador pode alterar ou excluir");
+    await expect(dialog.getByRole("button", { name: "Salvar alterações" })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
 
     // subordinado (dentro do acesso da gestora): tudo liberado
     await abrirMenu(page, subordinado.email, subordinado.nome);
@@ -146,7 +146,8 @@ test.describe("R-01: não administrador não assume a conta de quem tem mais ace
     for (let i = 0; i < 3; i++) {
       // envia com Enter: o próprio aviso pode cobrir o botão em telas baixas
       await dialog.locator('input[name="nome"]').press("Enter");
-      await expect(dialog.getByRole("alert")).toContainText("já está cadastrado");
+      // B-08 (auditoria back): mensagem neutra, igual para e-mail desta empresa ou de outra
+      await expect(dialog.getByRole("alert")).toContainText("Este e-mail não pode ser usado");
     }
     await expect(page.locator("[data-sonner-toast]")).toHaveCount(1);
   });

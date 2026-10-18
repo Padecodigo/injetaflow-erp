@@ -57,6 +57,15 @@ export interface DataRepository {
 
 type Snapshot = { version: 1; collections: Record<string, StoredRecord[]> };
 
+/**
+ * B-07: coleções só de inclusão. A auditoria não se edita, não se exclui (nem logicamente) e não se
+ * purga por nenhum caminho do repositório; uma tentativa é erro de programação e falha alto.
+ */
+export const APPEND_ONLY_COLLECTIONS: ReadonlySet<string> = new Set(["auditoria"]);
+function assertMutavel(collection: string, operacao: string) {
+  if (APPEND_ONLY_COLLECTIONS.has(collection)) throw new Error(`A coleção "${collection}" é só de inclusão (append-only): ${operacao} não é permitido.`);
+}
+
 const clone = <T>(value: T): T => (value === undefined ? value : JSON.parse(JSON.stringify(value)));
 
 export class MemoryRepository implements DataRepository {
@@ -108,6 +117,7 @@ export class MemoryRepository implements DataRepository {
   }
 
   async update<T>(collection: string, empresaId: string, id: string, patch: Partial<T>, actor: Actor | null = null): Promise<StoredRecord<T> | null> {
+    assertMutavel(collection, "update");
     const row = this.bucket(collection).find(item => item.id === id && item.empresaId === empresaId && !item.deletedAt);
     if (!row) return null;
     row.data = { ...(row.data as object), ...clone(patch) } as Record<string, unknown>;
@@ -118,6 +128,7 @@ export class MemoryRepository implements DataRepository {
   }
 
   async softDelete(collection: string, empresaId: string, id: string, actor: Actor | null = null): Promise<boolean> {
+    assertMutavel(collection, "softDelete");
     const row = this.bucket(collection).find(item => item.id === id && item.empresaId === empresaId && !item.deletedAt);
     if (!row) return false;
     row.deletedAt = new Date().toISOString();
@@ -127,6 +138,7 @@ export class MemoryRepository implements DataRepository {
   }
 
   async restore(collection: string, empresaId: string, id: string, actor: Actor | null = null): Promise<boolean> {
+    assertMutavel(collection, "restore");
     const row = this.bucket(collection).find(item => item.id === id && item.empresaId === empresaId && item.deletedAt);
     if (!row) return false;
     row.deletedAt = null;
@@ -147,6 +159,7 @@ export class MemoryRepository implements DataRepository {
   }
 
   async purge(collection: string, predicate: (record: StoredRecord) => boolean): Promise<number> {
+    assertMutavel(collection, "purge");
     const rows = this.bucket(collection);
     const keep = rows.filter(row => !predicate(row));
     const removed = rows.length - keep.length;

@@ -16,10 +16,12 @@ export const AUTOR_MIGRACAO = "Sistema (migração)";
 export const AUTOR_INICIALIZACAO = "Sistema (inicialização)";
 export const AUTOR_CLI = "Linha de comando";
 export const AUTOR_PORTAL = "Portal público";
+/** B-07: tentativas de login sem sessão (falhas e bloqueios). */
+export const AUTOR_LOGIN = "Tela de login (sem sessão)";
 
 /** Ator técnico para os metadados do registro (createdBy/updatedBy/deletedBy). */
 export function systemActor(autor: string) {
-  const id = autor === AUTOR_CLI ? "cli" : autor === AUTOR_PORTAL ? "portal" : "sistema";
+  const id = autor === AUTOR_CLI ? "cli" : autor === AUTOR_PORTAL ? "portal" : autor === AUTOR_LOGIN ? "login" : "sistema";
   return { id, nome: autor, matricula: null };
 }
 

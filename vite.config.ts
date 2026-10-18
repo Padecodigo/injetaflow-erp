@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { publicPlatformScript } from "./server/_core/publicConfig";
+import { linhasDeLogMascaradas } from "./server/_core/redact";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -12,7 +13,7 @@ import { publicPlatformScript } from "./server/_core/publicConfig";
 // =============================================================================
 
 const PROJECT_ROOT = import.meta.dirname;
-const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
+const LOG_DIR = process.env.INJETAFLOW_DEBUG_LOG_DIR || path.join(PROJECT_ROOT, ".manus-logs");
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
 const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% to avoid constant re-trimming
 
@@ -56,10 +57,8 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
-    const ts = new Date().toISOString();
-    return `[${ts}] ${JSON.stringify(entry)}`;
-  });
+  // senha, password, token e similares são mascarados antes de ir para o disco
+  const lines = linhasDeLogMascaradas(entries);
 
   // Append to log file
   fs.appendFileSync(logPath, `${lines.join("\n")}\n`, "utf-8");

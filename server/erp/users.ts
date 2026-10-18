@@ -1,11 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, hasPermission, isAdminPerfil, permissionsBeyond, type Permissions } from "@shared/erp/modules";
+import { PERFIS, PERMISSION_KEYS, PERMISSION_LABELS, SETORES, accessStrictlyBelow, hasPermission, isAdminPerfil, permissionsBeyond, type Permissions } from "@shared/erp/modules";
 import type { DataRepository, StoredRecord } from "./repository";
 import type { SessionUser, UserData } from "./types";
 import { AUTOR_MIGRACAO, actorOf, audit, systemActor } from "./audit";
-import { USERS, destroyUserSessions, findUserByEmail, hashUserPassword, normalizeEmail, sanitizePermissions, toSessionUser } from "./auth";
-import { normalizeText } from "./text";
+import { USERS, conferirSenhaAtual, destroyUserSessions, findUserByEmail, hashUserPassword, normalizeEmail, sanitizePermissions, toSessionUser } from "./auth";
+import { normalizeText, semCaracteresDeControle } from "./text";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_MIN_MESSAGE, USERNAME_MAX_LENGTH, normalizeUsername, usernameError, usernameFromEmail } from "@shared/erp/account";
 
 const permissionsSchema = z.record(z.string(), z.enum(["ver", "editar"])).transform(value => sanitizePermissions(value));
@@ -16,7 +16,7 @@ const usernameSchema = z.string({ error: "Informe o nome de usuário." }).trim()
 });
 
 export const userCreateSchema = z.object({
-  nome: z.string().trim().min(3, "Nome: informe o nome completo").max(120),
+  nome: z.string().trim().min(3, "Nome: informe o nome completo").max(120).refine(semCaracteresDeControle, "Nome: caracteres de controle não são permitidos."),
   email: z.string().trim().toLowerCase().email("E-mail inválido").max(200),
   /** Opcional na criação: se vazio, é derivado do e-mail. */
   username: usernameSchema.optional().or(z.literal("").transform(() => undefined)),
@@ -34,11 +34,17 @@ export const userUpdateSchema = userCreateSchema.omit({ senha: true, permissoes:
   status: z.enum(["Ativo", "Inativo"]).optional(),
   username: usernameSchema.optional(),
   novaSenha: z.string().min(PASSWORD_MIN_LENGTH, `Nova senha: ${PASSWORD_MIN_MESSAGE}`).max(PASSWORD_MAX_LENGTH).optional().or(z.literal("").transform(() => undefined)),
+  /** B-02: obrigatória quando a pessoa troca a PRÓPRIA senha, e-mail ou nome de usuário por esta rota. */
+  senhaAtual: z.string().max(PASSWORD_MAX_LENGTH).optional().or(z.literal("").transform(() => undefined)),
 });
 
 /** Meu perfil: o próprio usuário só pode mudar o nome de usuário (senha vai por auth.changePassword). */
 export const ownAccountSchema = z.object({ username: usernameSchema }).strict();
 export const OWN_ACCOUNT_FORBIDDEN = "Em Meu perfil só é possível alterar o nome de usuário e a senha. Matrícula, perfil, setor e permissões são definidos pelo administrador.";
+
+/** B-08: mesma mensagem para e-mail já usado nesta empresa ou em outra (não revela contas de outras empresas). */
+export const EMAIL_INDISPONIVEL = "Este e-mail não pode ser usado. Informe outro e-mail.";
+export const SENHA_ATUAL_AUSENTE = "Para alterar a sua própria senha, e-mail ou nome de usuário, informe a sua senha atual.";
 
 export type UserListQuery = { search?: string; perfil?: string; status?: string; setor?: string; page?: number; pageSize?: number };
 
@@ -131,16 +137,19 @@ function assertCanGrant(actor: SessionUser, next: Permissions, previous: Permiss
 }
 
 /**
- * R-01: quem não é administrador só mexe em credenciais/identificadores (senha, e-mail, nome de
- * usuário), status ou exclusão de quem tem permissões dentro das dele (mesmo nível ou menor).
- * Sem isso, daria para assumir a conta de alguém com mais acesso e entrar como ele.
+ * R-01 + B-01: quem não é administrador só altera (qualquer campo: módulos, perfil, nome, setor,
+ * credenciais, status) ou exclui pessoas com acesso ESTRITAMENTE menor que o dele. Antes só as
+ * credenciais eram conferidas, e dava para rebaixar quem tinha mais acesso e depois trocar a senha
+ * (tomada de conta). A tentativa negada fica na auditoria.
  */
-function assertWithinActor(actor: SessionUser, target: StoredRecord<UserData>, acao: string) {
+async function assertStrictlyBelow(repo: DataRepository, actor: SessionUser, target: StoredRecord<UserData>, acao: string) {
   if (isAdminPerfil(actor.perfil) || target.id === actor.id) return;
-  const excesso = permissionsBeyond(actor, { perfil: target.data.perfil, permissoes: sanitizePermissions(target.data.permissoes) });
-  if (excesso.length) {
-    throw new TRPCError({ code: "FORBIDDEN", message: `Somente o administrador pode ${acao} de ${target.data.nome}, que tem acesso além do seu (${excesso.map(key => PERMISSION_LABELS[key]).join(", ")}).` });
-  }
+  const alvo = { perfil: target.data.perfil, permissoes: sanitizePermissions(target.data.permissoes) };
+  if (accessStrictlyBelow(actor, alvo)) return;
+  const excesso = permissionsBeyond(actor, alvo);
+  const motivo = excesso.length ? `tem acesso além do seu (${excesso.map(key => PERMISSION_LABELS[key]).join(", ")})` : "tem acesso igual ao seu";
+  await audit(repo, actor.empresaId, actor, { acao: "negado", modulo: "usuarios", registroId: target.id, resumo: `Tentativa negada: ${acao} de ${target.data.nome}, que ${motivo}` });
+  throw new TRPCError({ code: "FORBIDDEN", message: `Somente o administrador pode ${acao} de ${target.data.nome}, que ${motivo}.` });
 }
 
 const ADMIN_ONLY = "Somente o administrador pode criar, editar ou excluir administradores e conceder o perfil Administrador.";
@@ -153,7 +162,7 @@ export async function createUser(repo: DataRepository, actor: SessionUser | null
     if (isAdminPerfil(data.perfil)) throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_ONLY });
     assertCanGrant(actor, data.permissoes as Permissions);
   }
-  if (await findUserByEmail(repo, data.email)) throw new TRPCError({ code: "CONFLICT", message: `O e-mail ${data.email} já está cadastrado.` });
+  if (await findUserByEmail(repo, data.email)) throw new TRPCError({ code: "CONFLICT", message: EMAIL_INDISPONIVEL });
   await assertMatriculaFree(repo, empresaId, data.matricula);
   let username: string;
   if (data.username) {
@@ -188,38 +197,37 @@ const CAMPOS: Record<string, string> = { nome: "nome", email: "e-mail", username
  * perfil Administrador, não editam administradores e só concedem módulos que possuem.
  * Ninguém (nem o administrador) altera o próprio perfil, módulos ou status. Tudo é auditado.
  */
-export async function updateUser(repo: DataRepository, actor: SessionUser, id: string, input: z.input<typeof userUpdateSchema>) {
+export async function updateUser(repo: DataRepository, actor: SessionUser, id: string, input: z.input<typeof userUpdateSchema>, opts: { sessionToken?: string | null } = {}) {
   const parsed = userUpdateSchema.safeParse(input);
   if (!parsed.success) throw new TRPCError({ code: "BAD_REQUEST", message: parsed.error.issues.map(issue => issue.message).join("; ") });
   const existing = await repo.get<UserData>(USERS, actor.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
-  const { novaSenha, ...rest } = parsed.data;
+  const { novaSenha, senhaAtual, ...rest } = parsed.data;
   const actorIsAdmin = isAdminPerfil(actor.perfil);
+  const self = id === actor.id;
+  const matriculaMuda = rest.matricula !== undefined && normalizeText(rest.matricula) !== normalizeText(existing.data.matricula);
+  const emailMuda = rest.email !== undefined && normalizeEmail(rest.email) !== existing.data.email;
+  const usernameMuda = rest.username !== undefined && normalizeUsername(rest.username) !== lower(existing.data.username);
+  // B-01: qualquer alteração em quem tem acesso maior ou igual fica com o administrador
+  if (!actorIsAdmin && !self) await assertStrictlyBelow(repo, actor, existing, "alterar os dados");
   if (!actorIsAdmin) {
-    if (rest.matricula !== undefined && normalizeText(rest.matricula) !== normalizeText(existing.data.matricula)) {
+    if (matriculaMuda) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Somente o administrador pode alterar a matrícula." });
     }
     if (isAdminPerfil(existing.data.perfil) || (rest.perfil && isAdminPerfil(rest.perfil))) {
       throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_ONLY });
     }
   }
+  // B-02: a própria senha, e-mail ou nome de usuário só mudam com a senha atual (como em Meu perfil)
+  if (self && (novaSenha || emailMuda || usernameMuda)) conferirSenhaAtual(existing, senhaAtual, { code: "FORBIDDEN", ausente: SENHA_ATUAL_AUSENTE });
   const perfilMuda = rest.perfil !== undefined && rest.perfil !== existing.data.perfil;
   const statusMuda = rest.status !== undefined && rest.status !== existing.data.status;
   const permissoesMudam = rest.permissoes !== undefined && !samePermissions(rest.permissoes, existing.data.permissoes);
-  if (!actorIsAdmin && id !== actor.id) {
-    const sensiveis = [
-      novaSenha ? "senha" : null,
-      rest.email !== undefined && normalizeEmail(rest.email) !== existing.data.email ? "e-mail" : null,
-      rest.username !== undefined && normalizeUsername(rest.username) !== lower(existing.data.username) ? "nome de usuário" : null,
-      statusMuda ? "status" : null,
-    ].filter(Boolean) as string[];
-    if (sensiveis.length) assertWithinActor(actor, existing, `alterar ${sensiveis.join(", ")}`);
-  }
-  if (!actorIsAdmin && permissoesMudam && id !== actor.id) assertCanGrant(actor, rest.permissoes as Permissions, sanitizePermissions(existing.data.permissoes));
+  if (!actorIsAdmin && permissoesMudam && !self) assertCanGrant(actor, rest.permissoes as Permissions, sanitizePermissions(existing.data.permissoes));
   const patch: Partial<UserData> = { ...rest } as Partial<UserData>;
   if (rest.email && normalizeEmail(rest.email) !== existing.data.email) {
     const other = await findUserByEmail(repo, rest.email);
-    if (other && other.id !== id) throw new TRPCError({ code: "CONFLICT", message: `O e-mail ${rest.email} já está cadastrado.` });
+    if (other && other.id !== id) throw new TRPCError({ code: "CONFLICT", message: EMAIL_INDISPONIVEL });
     patch.email = normalizeEmail(rest.email);
   }
   if (rest.matricula) await assertMatriculaFree(repo, actor.empresaId, rest.matricula, id);
@@ -236,11 +244,15 @@ export async function updateUser(repo: DataRepository, actor: SessionUser, id: s
   }
   if (novaSenha) patch.senhaHash = hashUserPassword(novaSenha);
   const updated = (await repo.update<UserData>(USERS, actor.empresaId, id, patch, actorOf(actor))) as StoredRecord<UserData>;
-  if (patch.status === "Inativo" || novaSenha) await destroyUserSessions(repo, id);
+  // a própria troca de senha mantém a sessão atual (como auth.changePassword); as demais caem
+  if (patch.status === "Inativo" || novaSenha) await destroyUserSessions(repo, id, self ? opts.sessionToken ?? undefined : undefined);
   const mudancas = Object.keys(CAMPOS)
     .filter(key => key in patch && JSON.stringify((patch as Record<string, unknown>)[key]) !== JSON.stringify((existing.data as Record<string, unknown>)[key]))
     .map(key => key === "permissoes" ? `${CAMPOS[key]}: ${describePermissionChanges(existing.data.permissoes, patch.permissoes) || "sem mudança"}` : `${CAMPOS[key]}: "${String((existing.data as Record<string, unknown>)[key] ?? "")}" → "${String((patch as Record<string, unknown>)[key] ?? "")}"`);
   if (novaSenha) mudancas.push("senha redefinida");
+  // B-03: a troca de matrícula (o administrador pode trocar a própria) fica explícita na trilha; a aprovação
+  // de ocorrências usa o ID do usuário, então trocar a matrícula não libera analisar a própria ocorrência
+  if (matriculaMuda) mudancas.push(`${self ? "o administrador trocou a PRÓPRIA matrícula" : "troca de matrícula pelo administrador"} (ponto, ocorrências e apontamentos da matrícula anterior não acompanham)`);
   await audit(repo, actor.empresaId, actor, { acao: "editar", modulo: "usuarios", registroId: id, resumo: `Usuário ${updated.data.nome}${mudancas.length ? ` — ${mudancas.join("; ")}` : " (sem alterações)"}` });
   return toSessionUser(updated);
 }
@@ -296,7 +308,7 @@ export async function deleteUser(repo: DataRepository, actor: SessionUser, id: s
   const existing = await repo.get<UserData>(USERS, actor.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado." });
   if (!isAdminPerfil(actor.perfil) && isAdminPerfil(existing.data.perfil)) throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_ONLY });
-  assertWithinActor(actor, existing, "excluir o usuário");
+  await assertStrictlyBelow(repo, actor, existing, "excluir o usuário");
   if (isAdminPerfil(existing.data.perfil) && existing.data.status === "Ativo" && (await countActiveAdmins(repo, actor.empresaId, id)) === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa precisa de pelo menos um administrador ativo." });
   }
