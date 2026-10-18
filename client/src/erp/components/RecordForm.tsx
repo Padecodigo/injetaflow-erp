@@ -44,7 +44,7 @@ export function RecordForm({ mod, record, defaults, onClose, onSaved, title }: {
 }) {
   const utils = trpc.useUtils();
   const editing = Boolean(record);
-  const fields = mod.fields.filter(field => !field.readOnly);
+  const fields = mod.fields.filter(field => !field.readOnly && !(editing && field.readOnlyOnEdit));
   const [values, setValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const field of fields) {

@@ -8,8 +8,11 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { registerErpHttpRoutes } from "../erp/http";
-import { ensureSeed } from "../erp/seed";
-import { getRepository } from "../erp/store";
+import { ARQUIVO_SENHA_INICIAL, ensureSeed } from "../erp/seed";
+import path from "node:path";
+import { dataDir, getRepository } from "../erp/store";
+import { StoreInvalidoError } from "../erp/repository";
+import { adquirirTrava, PastaDeDadosEmUsoError } from "../erp/trava";
 import { configureTrustProxy, trailingSlashRedirect } from "../erp/net";
 
 async function startServer() {
@@ -47,10 +50,30 @@ async function startServer() {
     serveStatic(app);
   }
 
-  await ensureSeed(getRepository());
-
   const port = Number(process.env.PORT || "3000");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
+
+  // B-04: trava da pasta de dados (as CLIs que gravam recusam enquanto o servidor estiver no ar)
+  try {
+    adquirirTrava(dataDir(), { papel: "servidor", porta: port });
+  } catch (error) {
+    if (!(error instanceof PastaDeDadosEmUsoError)) throw error;
+    console.error(`[InjetaFlow] O servidor NÃO subiu: ${error.message} Dois processos gravando a mesma pasta perderiam dados.`);
+    process.exit(1);
+  }
+  // B-05: store vazio, truncado ou inválido não vira instalação nova; o servidor recusa e aponta o backup
+  let repo;
+  try {
+    repo = getRepository();
+  } catch (error) {
+    if (!(error instanceof StoreInvalidoError)) throw error;
+    console.error(`\n[InjetaFlow] O servidor NÃO subiu.\n${error.message}\n`);
+    process.exit(1);
+  }
+  // Ctrl+C / docker stop: consolida o store e solta a trava (eventos "exit")
+  for (const sinal of ["SIGINT", "SIGTERM"] as const) process.once(sinal, () => process.exit(0));
+  // B-11: senha gerada no 1º start vai para um arquivo 0600 na pasta de dados, nunca para o stdout
+  await ensureSeed(repo, { arquivoSenha: path.join(dataDir(), ARQUIVO_SENHA_INICIAL) });
   server.on("error", error => { console.error("Server failed:", error.message); process.exit(1); });
   server.listen(port, "0.0.0.0", () => console.log(`Server listening on port ${port}`));
 }

@@ -94,6 +94,21 @@ export function validateInput(mod: ModuleDef, input: unknown, mode: "create" | "
   return parsed.data as RecordData;
 }
 
+/**
+ * B-09: campo que só se define na criação (saldo do estoque). Na edição, um valor diferente do atual é
+ * recusado (o saldo muda por movimentação, que fica no razão e na auditoria); o mesmo valor é aceito.
+ */
+export function assertCamposSoNaCriacao(mod: ModuleDef, input: unknown, atual: RecordData): void {
+  if (!input || typeof input !== "object") return;
+  for (const field of mod.fields) {
+    if (!field.readOnlyOnEdit) continue;
+    const novo = (input as Record<string, unknown>)[field.name];
+    if (novo === undefined) continue;
+    const igual = field.type === "number" || field.type === "money" ? String(novo).trim() !== "" && Number(novo) === Number(atual[field.name]) : novo === atual[field.name];
+    if (!igual) throw new TRPCError({ code: "BAD_REQUEST", message: field.readOnlyOnEdit });
+  }
+}
+
 export function flatten(record: StoredRecord<RecordData>): FlatRecord {
   return {
     ...record.data,
@@ -288,6 +303,7 @@ export async function updateRecord(repo: DataRepository, user: SessionUser, modu
   if (moduleKey === "movimentacoes") return updateMovement(repo, user, id, input);
   const existing = await repo.get<RecordData>(moduleKey, user.empresaId, id);
   if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+  assertCamposSoNaCriacao(mod, input, existing.data);
   const data = validateInput(mod, input, "update");
   if (mod.autoCode) delete data[mod.autoCode.field];
   await applyRules(repo, user.empresaId, mod, data, existing);

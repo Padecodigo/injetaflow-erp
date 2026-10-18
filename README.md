@@ -15,12 +15,12 @@ pnpm dev
 ```
 
 1. Abra **http://localhost:3000** (site público). A área interna fica em **http://localhost:3000/erp**.
-2. **Como entrar:** no primeiro `pnpm dev`, o terminal mostra um quadro *“InjetaFlow: administrador inicial”* com o usuário `admin` (também vale o e-mail `admin@wamovale.local` ou a matrícula `ADM-0001`) e uma **senha gerada, mostrada só nessa vez**. Logo abaixo aparecem os usuários de demonstração (Gestor, Supervisor, Operador, Consulta) e a senha deles. Copie e guarde.
+2. **Como entrar:** no primeiro `pnpm dev`, o terminal mostra um quadro *“InjetaFlow: administrador inicial”* com o usuário `admin` (também vale o e-mail `admin@wamovale.local` ou a matrícula `ADM-0001`). A **senha gerada não vai para o terminal nem para logs**: fica no arquivo `.data/senha-inicial.txt` (permissão 0600), cujo caminho o quadro mostra, junto com a senha dos usuários de demonstração (Gestor, Supervisor, Operador, Consulta). Troque a senha no 1º acesso e apague o arquivo.
 3. Prefere escolher as senhas? Antes do primeiro `pnpm dev`, rode `INJETAFLOW_ADMIN_PASSWORD='sua-senha-forte' INJETAFLOW_DEMO_PASSWORD='outra-senha' pnpm dev` (ou coloque essas linhas num arquivo `.env`, veja `.env.example`).
-4. Perdeu a senha? Pare o `pnpm dev` e rode `pnpm erp:reset-senha` (gera outra e mostra no terminal) ou `pnpm erp:reset-senha <e-mail | usuário | matrícula>`. Veja [Redefinir senha e usuário do admin](#redefinir-senha-e-usuário-do-admin).
+4. Perdeu a senha? Pare o `pnpm dev` (com o servidor no ar o comando recusa: "pare o servidor antes") e rode `pnpm erp:reset-senha` (gera outra e mostra no terminal) ou `pnpm erp:reset-senha <e-mail | usuário | matrícula>`. Veja [Redefinir senha e usuário do admin](#redefinir-senha-e-usuário-do-admin).
 5. Os dados ficam em `.data/` (ignorada pelo git). Para recomeçar do zero, pare o servidor e apague essa pasta.
 
-Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o selo **DEMO**; para não carregá-los, use `INJETAFLOW_SEED_DEMO=false` no primeiro start. As marcações de ponto de demonstração (origem "Demonstração") só são criadas com `NODE_ENV=development` ou `test` (o `pnpm dev` já define development); com `NODE_ENV` ausente ou `production` não são criadas. Para ligá-las explicitamente, use `INJETAFLOW_SEED_DEMO_PONTO=1` (e `=0` para desligar). O ERP não registra ponto: a origem oficial das marcações é o relógio (REP).
+Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados e usuários de exemplo aparecem com o selo **DEMO** e só são criados em desenvolvimento (`pnpm dev`) ou com `INJETAFLOW_SEED_DEMO=1`; em produção (`NODE_ENV=production` ou ausente) não são criados por padrão. Para não carregá-los no `pnpm dev`, use `INJETAFLOW_SEED_DEMO=false` no primeiro start. As marcações de ponto de demonstração (origem "Demonstração") só são criadas com `NODE_ENV=development` ou `test` (o `pnpm dev` já define development); com `NODE_ENV` ausente ou `production` não são criadas. Para ligá-las explicitamente, use `INJETAFLOW_SEED_DEMO_PONTO=1` (e `=0` para desligar). O ERP não registra ponto: a origem oficial das marcações é o relógio (REP).
 
 ## Comandos
 
@@ -30,6 +30,19 @@ Porta 3000 ocupada? Use `PORT=3001 pnpm dev`. Dados de exemplo aparecem com o se
 - `pnpm test:e2e`: testes ponta a ponta (Playwright; sobe o app na porta 3100 com dados descartáveis em `.data-e2e`). Na primeira vez: `pnpm exec playwright install chromium`.
 - `pnpm erp:reset-senha [e-mail | usuário | matrícula] [--username novo] [--manter-senha]`: redefine a senha (e opcionalmente o nome de usuário) de um usuário local.
 - `pnpm erp:restaurar-usuario [--listar | e-mail | usuário | matrícula | id]`: restaura um usuário excluído logicamente.
+
+## Dados, backup e restauração
+
+Os dados ficam em `.data/` (ou `INJETAFLOW_DATA_DIR`): `injetaflow.json` (snapshot), `injetaflow.json.journal.N` (gravações recentes), `injetaflow.json.bak` e `backups/` (cópias), `uploads/` (anexos).
+
+- **Gravação:** cada gravação confirmada vai na hora para o journal (append + fsync); o snapshot completo é consolidado depois, em segundo plano (debounce de 1 s, no máximo a cada 10 s), por arquivo temporário + rename. Antes de cada troca, o snapshot anterior vira `injetaflow.json.bak`, e de hora em hora uma cópia vai para `backups/injetaflow-auto-*.json` (ficam as 48 mais recentes).
+- **Arquivo vazio, truncado ou inválido:** o servidor **não sobe** e não recria nada; a mensagem indica o backup mais recente.
+- `pnpm erp:backup [arquivo]`: cópia consolidada (0600) em `backups/injetaflow-manual-*.json` ou no caminho indicado. Pode rodar com o servidor no ar.
+- `pnpm erp:restaurar-backup --listar` / `pnpm erp:restaurar-backup <arquivo>`: restaura (servidor parado). Antes, guarda o estado atual em `backups/injetaflow-antes-da-restauracao-*`; nada é apagado.
+- **Trava:** o servidor segura `.data/injetaflow.lock`. `erp:reset-senha`, `erp:restaurar-usuario` e `erp:restaurar-backup` recusam enquanto ele estiver no ar (trava ou servidor desta pasta respondendo na porta `PORT`), e um segundo servidor na mesma pasta não sobe.
+- **Docker:** a imagem roda como o usuário `node`, com `INJETAFLOW_DATA_DIR=/app/.data` num `VOLUME`; `.dockerignore` exclui `.data*`, backups e journal. Monte um volume persistente em `/app/.data`.
+- **Escritas concorrentes:** toda mutation tRPC que grava passa por uma seção crítica única (o login fica de fora), para que códigos automáticos e campos únicos não se dupliquem com requisições simultâneas.
+- **Estoque:** o saldo de um item só é definido na criação; depois, muda apenas por movimentação (entrada, saída ou ajuste), que fica no razão e na auditoria.
 
 ## Login, nome de usuário e Meu perfil
 

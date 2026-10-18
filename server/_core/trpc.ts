@@ -6,6 +6,7 @@ import { PONTO_SO_NO_RELOGIO, ROTAS_PONTO_REMOVIDAS } from "@shared/erp/ponto";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import type { TrpcContext } from "./context";
+import { emSecaoCritica } from "./secaoCritica";
 
 /**
  * N15: erros de validação (Zod) saem como texto legível em português, não como o array JSON cru.
@@ -47,8 +48,23 @@ const t = initTRPC.context<TrpcContext>().create({
   },
 });
 
+/**
+ * Auditoria de frontend (item de backend): escritas concorrentes geravam código/ID duplicado.
+ * Toda mutation que grava dados roda numa seção crítica única: a checagem de unicidade, o cálculo do
+ * próximo código e o insert terminam antes da próxima escrita começar (o store é um processo só).
+ * Ficam de fora o login (público, sujeito a força bruta: não pode travar as escritas do ERP) e as
+ * rotas do template que chamam serviços externos.
+ */
+export const MUTATIONS_FORA_DA_SECAO: ReadonlySet<string> = new Set(["auth.login", "system.notifyOwner"]);
+export const CHAVE_ESCRITAS = "escritas";
+
+const serializarEscritas = t.middleware(({ type, path, next }) => {
+  if (type !== "mutation" || MUTATIONS_FORA_DA_SECAO.has(path)) return next();
+  return emSecaoCritica(CHAVE_ESCRITAS, () => next());
+});
+
 export const router = t.router;
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(serializarEscritas);
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
@@ -59,7 +75,7 @@ const requireUser = t.middleware(async opts => {
 });
 
 /** Exige sessão válida. */
-export const protectedProcedure = t.procedure.use(requireUser);
+export const protectedProcedure = publicProcedure.use(requireUser);
 
 /** Exige sessão + permissão no módulo (ver ou editar). */
 export function moduleProcedure(permission: PermissionKey, level: AccessLevel = "ver") {

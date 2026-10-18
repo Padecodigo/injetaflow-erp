@@ -44,6 +44,8 @@ export default defineConfig({
       INJETAFLOW_COOKIE_SECURE: "false",
       // P7-07: o seed de ponto (origem "Demonstração") não roda em produção por padrão; o E2E liga explicitamente
       INJETAFLOW_SEED_DEMO_PONTO: "1",
+      // B-10: produção não cria dados/usuários de demonstração por padrão; o E2E usa os demo e liga explicitamente
+      INJETAFLOW_SEED_DEMO: "1",
     },
   },
 });

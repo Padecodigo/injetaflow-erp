@@ -14,12 +14,34 @@ export function dataDir(): string {
   return path.resolve(process.env.INJETAFLOW_DATA_DIR || path.join(process.cwd(), ".data"));
 }
 
+export const STORE_FILE = "injetaflow.json";
+
+export function storePath(dir = dataDir()): string {
+  return path.join(dir, STORE_FILE);
+}
+
+/** Consolida o snapshot e fecha o journal na saída do processo (servidor e CLIs). */
+function fecharNaSaida(repo: JsonFileRepository) {
+  // prepend: roda antes de soltar a trava da pasta (registrada antes, ao subir)
+  process.prependListener("exit", () => {
+    try {
+      repo.close();
+    } catch (error) {
+      console.error("[store] falha ao consolidar na saída (os dados seguem no journal):", error);
+    }
+  });
+}
+
 /** Repositório ativo. Em testes (`NODE_ENV=test`) usa memória por padrão. */
 export function getRepository(): DataRepository {
   if (!current) {
-    current = process.env.NODE_ENV === "test" && !process.env.INJETAFLOW_DATA_DIR
-      ? new MemoryRepository()
-      : new JsonFileRepository(path.join(dataDir(), "injetaflow.json"));
+    if (process.env.NODE_ENV === "test" && !process.env.INJETAFLOW_DATA_DIR) {
+      current = new MemoryRepository();
+    } else {
+      const repo = new JsonFileRepository(storePath());
+      fecharNaSaida(repo);
+      current = repo;
+    }
   }
   return current;
 }

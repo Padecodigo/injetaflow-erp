@@ -44,29 +44,50 @@ test.describe("B10/B24: permissões por perfil", () => {
     await expect(page.getByTestId("forbidden")).toBeVisible();
   });
 
-  test("N12: usuário inativo vê 'Usuário inativo' no login (não 'senha inválida')", async ({ page }) => {
+  /**
+   * B-23 (instável): o nome "Inativo E2E" já continha "Inativo", então `toContainText("Inativo")` passava antes
+   * de a desativação gravar; o login seguinte entrava como usuário ATIVO e o teste esperava a mensagem até o
+   * timeout; e, com muitos usuários, a linha nova nem aparecia na 1ª página. Agora: busca pelo e-mail, nome sem a palavra, espera a resposta da mutation e o status na coluna própria, e o login
+   * roda num contexto novo (sem cookies nem storage do admin), sem depender da ordem da suíte.
+   */
+  test("N12: usuário inativo vê 'Usuário inativo' no login (não 'senha inválida')", async ({ page, browser }, testInfo) => {
     await login(page);
     await page.goto("/usuarios");
     await page.getByRole("button", { name: "Novo usuário" }).click();
     const dialog = page.getByRole("dialog");
-    const email = `inativo-${Date.now()}@teste.local`;
-    await dialog.locator('input[name="nome"]').fill("Inativo E2E");
+    const marca = `${Date.now()}-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+    const email = `n12-${marca}@teste.local`;
+    const nome = `Pessoa N12 ${marca}`;
+    await dialog.locator('input[name="nome"]').fill(nome);
     await dialog.locator('input[name="email"]').fill(email);
-    await dialog.locator('input[name="matricula"]').fill(`I-${Date.now() % 100000}`);
+    await dialog.locator('input[name="matricula"]').fill(`N12-${Date.now() % 100000}${testInfo.repeatEachIndex}`);
     await dialog.locator('select[name="perfil"]').selectOption("Consulta");
     await dialog.locator('input[name="senha"]').fill(SENHA_INATIVO);
     await dialog.getByRole("button", { name: "Cadastrar usuário" }).click();
+    await expect(dialog).toBeHidden();
+    // com muitos usuários (suíte inteira ou --repeat-each) a linha nova pode não estar na 1ª página: busca pelo e-mail
+    await page.getByRole("textbox", { name: "Buscar usuário" }).fill(email);
     const row = page.getByTestId("user-row").filter({ hasText: email });
-    await row.getByRole("button", { name: "Ações de Inativo E2E" }).click();
+    await expect(row.locator("td").filter({ hasText: /^Ativo$/ })).toBeVisible();
+    await row.getByRole("button", { name: `Ações de ${nome}` }).click();
+    const gravou = page.waitForResponse(res => /\/api\/trpc\/usuarios\./.test(res.url()) && res.request().method() === "POST");
     await page.getByRole("menuitem", { name: "Desativar" }).click();
-    await expect(row).toContainText("Inativo");
+    expect((await gravou).ok()).toBe(true);
+    await expect(row.locator("td").filter({ hasText: /^Inativo$/ })).toBeVisible();
 
-    await page.context().clearCookies();
-    await page.goto("/erp");
-    await page.getByRole("textbox", { name: /E-mail/ }).fill(email);
-    await page.getByLabel("Senha").fill(SENHA_INATIVO);
-    await page.getByRole("button", { name: /Entrar/ }).click();
-    await expect(page.getByText(/Usuário inativo\. Fale com o administrador/).first()).toBeVisible();
-    await expect(page.getByText(/Usuário, e-mail, matrícula ou senha inválidos/)).toHaveCount(0);
+    // login num contexto limpo: nada da sessão do admin (cookies, storage) vaza para cá
+    const limpo = await browser.newContext({ baseURL: testInfo.project.use.baseURL, locale: "pt-BR", timezoneId: "America/Sao_Paulo", storageState: { cookies: [], origins: [] } });
+    try {
+      const tela = await limpo.newPage();
+      await tela.goto("/erp");
+      await tela.getByRole("textbox", { name: /E-mail/ }).fill(email);
+      await tela.getByLabel("Senha").fill(SENHA_INATIVO);
+      await tela.getByRole("button", { name: /Entrar/ }).click();
+      await expect(tela.getByText(/Usuário inativo\. Fale com o administrador/).first()).toBeVisible();
+      await expect(tela.getByText(/Usuário, e-mail, matrícula ou senha inválidos/)).toHaveCount(0);
+      await expect(tela).toHaveURL(/\/erp(\?|$)/);
+    } finally {
+      await limpo.close();
+    }
   });
 });

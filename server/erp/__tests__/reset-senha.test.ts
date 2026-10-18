@@ -15,16 +15,21 @@ const root = path.resolve(__dirname, "../../..");
 const tsx = path.join(root, "node_modules", ".bin", "tsx");
 
 const dirs: string[] = [];
-afterAll(() => { for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true }); });
+// B-04: a CLI só grava com a pasta livre; o "servidor" de teste fecha o store antes de cada CLI
+const abertos: JsonFileRepository[] = [];
+const fecharTodos = () => { for (const r of abertos.splice(0)) r.close(); };
+afterAll(() => { fecharTodos(); for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true }); });
 
 function storeAntigo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "injetaflow-reset-"));
   dirs.push(dir);
   const repo = new JsonFileRepository(path.join(dir, "injetaflow.json"));
+  abertos.push(repo);
   return { dir, repo };
 }
 
 function run(dir: string, args: string[], env: Record<string, string> = {}, script = "tools/reset-admin-password.ts") {
+  fecharTodos();
   const childEnv: NodeJS.ProcessEnv = { ...process.env, INJETAFLOW_DATA_DIR: dir, NODE_ENV: "development", ...env };
   delete childEnv.VITEST;
   delete childEnv.INJETAFLOW_ADMIN_PASSWORD;
@@ -33,7 +38,11 @@ function run(dir: string, args: string[], env: Record<string, string> = {}, scri
   return execFileSync(tsx, [script, ...args], { cwd: root, env: childEnv, encoding: "utf8" });
 }
 
-const ler = (dir: string) => new JsonFileRepository(path.join(dir, "injetaflow.json"));
+const ler = (dir: string) => {
+  const repo = new JsonFileRepository(path.join(dir, "injetaflow.json"));
+  abertos.push(repo);
+  return repo;
+};
 
 describe("pnpm erp:reset-senha (identificador flexível + username)", () => {
   it("lê argumentos", () => {
