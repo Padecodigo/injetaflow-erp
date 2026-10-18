@@ -5,3 +5,15 @@ dist
 .env.*
 .manus-logs
 *.manus-starter-*
+# B-16: nunca copiar dados locais para a imagem (hashes de senha, sessões, dados pessoais, anexos, backups)
+.data
+.data/
+.data-*
+*.journal.*
+backups
+senha-inicial.txt
+# artefatos de teste e pacotes
+test-results
+playwright-report
+coverage
+*.zip

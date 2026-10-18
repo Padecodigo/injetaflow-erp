@@ -1,7 +1,7 @@
 /**
  * Restaura um usuário do ERP local que foi excluído logicamente (ex.: administrador excluído
  * por engano). O registro nunca é apagado de verdade; este comando apenas o devolve às listas.
- * Pare o `pnpm dev` antes de rodar (o servidor mantém os dados em memória).
+ * Recusa com o servidor no ar (B-04: o servidor mantém os dados em memória): pare o servidor antes.
  *
  * Uso:
  *   pnpm erp:restaurar-usuario --listar               lista os usuários excluídos
@@ -13,7 +13,9 @@
  * autor "Linha de comando". Empresa: INJETAFLOW_EMPRESA (padrão: a empresa padrão).
  */
 import "dotenv/config";
-import { getRepository, DEFAULT_EMPRESA_ID } from "../server/erp/store";
+import { DEFAULT_EMPRESA_ID } from "../server/erp/store";
+import { abrirStoreParaGravar, confirmarGravacao } from "./cli-store";
+import { USERS } from "../server/erp/auth";
 import { AUTOR_CLI } from "../server/erp/audit";
 import { formatBrasilia, listDeletedUsers, migrateUsernames, restoreUser } from "../server/erp/users";
 
@@ -33,7 +35,7 @@ export function parseRestoreArgs(argv: string[]) {
 async function main() {
   const args = parseRestoreArgs(process.argv.slice(2));
   const empresaId = process.env.INJETAFLOW_EMPRESA || DEFAULT_EMPRESA_ID;
-  const repo = getRepository();
+  const repo = await abrirStoreParaGravar("erp:restaurar-usuario");
   await migrateUsernames(repo, { adminUsername: process.env.INJETAFLOW_ADMIN_USERNAME });
   if (args.listar) {
     const excluidos = await listDeletedUsers(repo, empresaId);
@@ -46,6 +48,7 @@ async function main() {
     return;
   }
   const out = await restoreUser(repo, empresaId, args.identificador!, { autor: AUTOR_CLI });
+  await confirmarGravacao(async lido => Boolean(await lido.get(USERS, empresaId, out.user.id)));
   console.log(`Usuário restaurado: ${out.user.nome} (${out.user.perfil}) · e-mail ${out.user.email} · usuário "${out.user.username}" · matrícula ${out.user.matricula} · status ${out.user.status}.`);
   if (out.usernameMotivo === "em uso") console.log(`O nome de usuário anterior ("${out.usernameAnterior}") estava em uso; o novo é "${out.user.username}".`);
   else if (out.usernameMotivo === "vazio") console.log(`O usuário não tinha nome de usuário; recebeu "${out.user.username}" (derivado do e-mail).`);

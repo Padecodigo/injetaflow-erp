@@ -226,13 +226,13 @@ describe("P7-05/P7-07: gravador de demonstração e seed", () => {
 
   it("seed em produção não grava ponto; fora de produção grava só origem Demonstração, de forma determinística (P7-04)", async () => {
     const prod = new MemoryRepository();
-    const r1 = await ensureSeed(prod, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "production", INJETAFLOW_ADMIN_PASSWORD: "Senha-Prod-1234" } });
+    const r1 = await ensureSeed(prod, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "production", INJETAFLOW_SEED_DEMO: "1", INJETAFLOW_ADMIN_PASSWORD: "Senha-Prod-1234" } });
     expect(r1.demoSeeded).toBe(true);
     expect((await prod.list("ponto", "e1")).total).toBe(0);
 
     for (const hora of ["2026-10-17T00:30:00", "2026-10-17T05:00:00", "2026-10-17T23:00:00"]) {
       const dev = new MemoryRepository();
-      await ensureSeed(dev, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "production", INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
+      await ensureSeed(dev, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "production", INJETAFLOW_SEED_DEMO: "1", INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
       const actor = { id: "seed", empresaId: "e1", nome: "Carga de demonstração", email: "", setor: "Administrativo", perfil: "Administrador", matricula: "DEMO", permissoes: {}, status: "Ativo" } as const;
       await seedPontoDemo(dev, actor as never, new Date(hora));
       const { items } = await dev.list<Record<string, unknown>>("ponto", "e1");
@@ -247,11 +247,12 @@ describe("P7-05/P7-07: gravador de demonstração e seed", () => {
     await ensureSeed(dev, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "development", INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
     expect((await dev.list("ponto", "e1")).total).toBeGreaterThanOrEqual(9);
     // P7-R2-03: NODE_ENV ausente (o servidor roda como produção) não semeia; =1 explícito semeia
+    // (B-10: desde a auditoria de backend, produção também não semeia a demonstração sem INJETAFLOW_SEED_DEMO=1)
     const semEnv = new MemoryRepository();
     await ensureSeed(semEnv, { empresaId: "e1", log: () => undefined, env: { INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
     expect((await semEnv.list("ponto", "e1")).total).toBe(0);
     const explicito = new MemoryRepository();
-    await ensureSeed(explicito, { empresaId: "e1", log: () => undefined, env: { INJETAFLOW_SEED_DEMO_PONTO: "1", INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
+    await ensureSeed(explicito, { empresaId: "e1", log: () => undefined, env: { INJETAFLOW_SEED_DEMO_PONTO: "1", INJETAFLOW_SEED_DEMO: "1", INJETAFLOW_ADMIN_PASSWORD: "Senha-Dev-1234" } });
     expect((await explicito.list("ponto", "e1")).total).toBeGreaterThanOrEqual(9);
   });
 });

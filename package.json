@@ -16,6 +16,8 @@
     "build:static": "vite build",
     "erp:reset-senha": "tsx tools/reset-admin-password.ts",
     "erp:restaurar-usuario": "tsx tools/restaurar-usuario.ts",
+    "erp:backup": "tsx tools/backup.ts",
+    "erp:restaurar-backup": "tsx tools/restaurar-backup.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"

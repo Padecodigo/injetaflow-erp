@@ -76,6 +76,8 @@ export type FieldDef = {
   readOnly?: boolean;
   /** Campo opcional apenas na edição. */
   hiddenOnCreate?: boolean;
+  /** B-09: aparece na criação, mas não se edita depois (ex.: saldo do estoque só muda por movimentação). */
+  readOnlyOnEdit?: string;
   /** Campos numéricos: mínimo (padrão 0, nunca negativo), máximo e se aceita só inteiros. */
   min?: number;
   max?: number;
@@ -199,7 +201,7 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
       { name: "material", label: "Material / produto", type: "text", required: true },
       { name: "categoria", label: "Categoria", type: "select", options: ["Resina", "Pigmento/Masterbatch", "Embalagem", "Componente", "Produto acabado", "Outro"], required: true },
       { name: "lote", label: "Lote", type: "text" },
-      { name: "saldo", label: "Saldo", type: "number", required: true, min: 0 },
+      { name: "saldo", label: "Saldo", type: "number", required: true, min: 0, readOnlyOnEdit: "O saldo só muda por movimentação: registre uma entrada, saída ou ajuste em Movimentações de estoque (fica no razão e na auditoria)." },
       { name: "unidade", label: "Unidade", type: "select", options: ["kg", "un", "cx", "L", "m"], required: true },
       { name: "estoqueMinimo", label: "Estoque mínimo", type: "number", min: 0 },
       { name: "local", label: "Local", type: "text", placeholder: "Ex.: Silo 02 / A-01-03" },

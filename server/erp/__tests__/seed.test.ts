@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MemoryRepository } from "../repository";
@@ -17,12 +18,17 @@ describe("seed do administrador inicial", () => {
     expect((await s.caller.auth.me())?.perfil).toBe("Administrador");
   });
 
-  it("gera senha aleatória e mostra só no console local quando não há variável", async () => {
+  it("B-11: gera senha aleatória e grava num arquivo 0600; o log mostra só o caminho", async () => {
     const repo = new MemoryRepository();
     const logs: string[] = [];
-    const result = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { INJETAFLOW_SEED_DEMO: "false" } });
+    const arquivoSenha = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "injetaflow-seed-")), "senha-inicial.txt");
+    const result = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { INJETAFLOW_SEED_DEMO: "false" }, arquivoSenha });
     expect(result.generatedPassword).toHaveLength(16);
-    expect(logs.join("\n")).toContain(result.generatedPassword!);
+    expect(logs.join("\n").includes(result.generatedPassword!), "a senha gerada aparece no log").toBe(false);
+    expect(logs.join("\n")).toContain(arquivoSenha);
+    expect(result.arquivoSenha).toBe(arquivoSenha);
+    expect(fs.statSync(arquivoSenha).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(arquivoSenha, "utf8")).toContain(result.generatedPassword!);
     await login(repo, "admin@wamovale.local", result.generatedPassword!);
     // segunda execução não recria nem imprime de novo
     const again = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { INJETAFLOW_SEED_DEMO: "false" } });
@@ -31,7 +37,7 @@ describe("seed do administrador inicial", () => {
 
   it("dados de exemplo ficam marcados como demonstração", async () => {
     const repo = new MemoryRepository();
-    await ensureSeed(repo, { empresaId: "e1", log: () => undefined, env: { INJETAFLOW_ADMIN_PASSWORD: "Senha-Do-Env-1" } });
+    await ensureSeed(repo, { empresaId: "e1", log: () => undefined, env: { NODE_ENV: "development", INJETAFLOW_ADMIN_PASSWORD: "Senha-Do-Env-1" } });
     for (const collection of ["ordens", "moldes", "estoque", "colaboradores", "financeiro", "producao", "movimentacoes"]) {
       const { items } = await repo.list(collection, "e1");
       expect(items.length, collection).toBeGreaterThan(0);
@@ -55,13 +61,15 @@ describe("seed do administrador inicial", () => {
 });
 
 describe("seed de usuários de demonstração (pnpm dev sem variáveis)", () => {
-  it("cria um usuário demo por perfil com senha gerada mostrada só no console", async () => {
+  it("cria um usuário demo por perfil; a senha gerada vai para o arquivo 0600, não para o log (B-11)", async () => {
     const repo = new MemoryRepository();
     const logs: string[] = [];
-    const result = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: {} });
+    const arquivoSenha = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "injetaflow-seed-")), "senha-inicial.txt");
+    const result = await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { NODE_ENV: "development" }, arquivoSenha });
     expect(result.demoUsers).toHaveLength(4);
     expect(result.generatedDemoPassword).toHaveLength(16);
-    expect(logs.join("\n")).toContain(result.generatedDemoPassword!);
+    expect(logs.join("\n").includes(result.generatedDemoPassword!), "a senha demo aparece no log").toBe(false);
+    expect(fs.readFileSync(arquivoSenha, "utf8")).toContain(result.generatedDemoPassword!);
     const operador = await login(repo, "operador.demo@wamovale.local", result.generatedDemoPassword!);
     const me = await operador.caller.auth.me();
     expect(me?.perfil).toBe("Operador");
@@ -71,7 +79,7 @@ describe("seed de usuários de demonstração (pnpm dev sem variáveis)", () => 
   it("usa INJETAFLOW_DEMO_PASSWORD sem imprimi-la", async () => {
     const repo = new MemoryRepository();
     const logs: string[] = [];
-    await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { INJETAFLOW_ADMIN_PASSWORD: "Senha-Admin-Env-1", INJETAFLOW_DEMO_PASSWORD: "Senha-Demo-Env-1" } });
+    await ensureSeed(repo, { empresaId: "e1", log: m => logs.push(m), env: { NODE_ENV: "development", INJETAFLOW_ADMIN_PASSWORD: "Senha-Admin-Env-1", INJETAFLOW_DEMO_PASSWORD: "Senha-Demo-Env-1" } });
     expect(logs.join("\n")).not.toContain("Senha-Demo-Env-1");
     await login(repo, "consulta.demo@wamovale.local", "Senha-Demo-Env-1");
   });

@@ -1,6 +1,6 @@
 /**
  * Redefine a senha (e, se quiser, o nome de usuário) de um usuário do ERP local.
- * Útil se a senha gerada no 1º start se perdeu. Pare o `pnpm dev` antes de rodar.
+ * Útil se a senha gerada no 1º start se perdeu. Recusa com o servidor no ar (B-04): pare o servidor antes.
  *
  * Uso:
  *   pnpm erp:reset-senha [identificador] [--username novo] [--manter-senha]
@@ -20,7 +20,8 @@
 import "dotenv/config";
 import { PASSWORD_MIN_LENGTH, normalizeUsername, usernameError } from "../shared/erp/account";
 import { isAdminPerfil } from "../shared/erp/modules";
-import { getRepository, DEFAULT_EMPRESA_ID } from "../server/erp/store";
+import { DEFAULT_EMPRESA_ID } from "../server/erp/store";
+import { abrirStoreParaGravar, confirmarGravacao } from "./cli-store";
 import { USERS, destroyUserSessions, findLoginCandidates, hashUserPassword } from "../server/erp/auth";
 import { generatePassword } from "../server/erp/password";
 import { assertUsernameFree, listDeletedUsers, migrateUsernames } from "../server/erp/users";
@@ -56,7 +57,7 @@ async function main() {
     if (error) throw new Error(error);
   }
 
-  const repo = getRepository();
+  const repo = await abrirStoreParaGravar("erp:reset-senha");
   await migrateUsernames(repo, { adminUsername: process.env.INJETAFLOW_ADMIN_USERNAME });
 
   const identificador = args.identificador ?? process.env.INJETAFLOW_RESET_USER ?? process.env.INJETAFLOW_ADMIN_EMAIL;
@@ -92,6 +93,12 @@ async function main() {
   await repo.update<UserData>(USERS, empresaId, user.id, patch, systemActor(AUTOR_CLI));
   if (senha) await destroyUserSessions(repo, user.id);
   await audit(repo, empresaId, null, { autor: AUTOR_CLI, acao: "editar", modulo: "usuarios", registroId: user.id, resumo: `Linha de comando: ${[senha ? "senha redefinida" : null, patch.username ? `nome de usuário "${patch.username}"` : null, "reativado"].filter(Boolean).join(", ")} (${user.data.email})` });
+
+  const alvo = user;
+  await confirmarGravacao(async lido => {
+    const salvo = await lido.get<UserData>(USERS, empresaId, alvo.id);
+    return Boolean(salvo && salvo.data.status === "Ativo" && (!patch.senhaHash || salvo.data.senhaHash === patch.senhaHash) && (!patch.username || salvo.data.username === patch.username));
+  });
 
   const username = patch.username ?? user.data.username;
   console.log(`Usuário atualizado: ${user.data.nome} · e-mail ${user.data.email} · usuário "${username}" · matrícula ${user.data.matricula}.`);

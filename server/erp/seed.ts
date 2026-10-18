@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { PERFIL_PRESETS } from "@shared/erp/modules";
 import type { DataRepository } from "./repository";
 import type { SessionUser, UserData } from "./types";
@@ -10,7 +12,38 @@ import { AUTOR_INICIALIZACAO } from "./audit";
 import { PASSWORD_MIN_LENGTH } from "@shared/erp/account";
 import { DEFAULT_EMPRESA_ID } from "./store";
 
-export type SeedResult = { adminCreated: boolean; adminEmail?: string; generatedPassword?: string; demoSeeded: boolean; demoUsers?: string[]; generatedDemoPassword?: string };
+export type SeedResult = { adminCreated: boolean; adminEmail?: string; generatedPassword?: string; demoSeeded: boolean; demoUsers?: string[]; generatedDemoPassword?: string; arquivoSenha?: string };
+
+/** B-11: nome do arquivo (na pasta de dados) que recebe as senhas geradas no 1º start. */
+export const ARQUIVO_SENHA_INICIAL = "senha-inicial.txt";
+
+/**
+ * B-10: dados e usuários de demonstração só quando pedidos. INJETAFLOW_SEED_DEMO=1/true liga, =0/false
+ * desliga; sem a variável, só em desenvolvimento/teste. Produção (ou NODE_ENV ausente, que o servidor
+ * trata como produção) não cria gestora.demo & cia por padrão.
+ */
+export function deveSemearDemo(env: NodeJS.ProcessEnv): boolean {
+  const flag = (env.INJETAFLOW_SEED_DEMO ?? "").trim().toLowerCase();
+  if (flag === "1" || flag === "true") return true;
+  if (flag === "0" || flag === "false") return false;
+  return env.NODE_ENV === "development" || env.NODE_ENV === "test";
+}
+
+/** B-11: grava as senhas geradas num arquivo 0600 (nunca no stdout, que vai para docker logs/journald). */
+function gravarArquivoSenha(file: string, linhas: string[]): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const conteudo = [
+    "InjetaFlow: senhas geradas no primeiro start (troque no 1º acesso, em Meu perfil, e apague este arquivo).",
+    `Gerado em ${new Date().toISOString()}.`,
+    "",
+    ...linhas,
+    "",
+  ].join("\n");
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, conteudo, { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600);
+  fs.renameSync(tmp, file);
+}
 
 /** Usuários de DEMONSTRAÇÃO (um por perfil) para testar permissões sem cadastrar ninguém. */
 export const DEMO_USERS = [
@@ -25,19 +58,25 @@ export const DEMO_USERS = [
  * opcionalmente, dados de DEMONSTRAÇÃO marcados com `demo: true`.
  *
  * - E-mail: INJETAFLOW_ADMIN_EMAIL (padrão admin@wamovale.local)
- * - Senha: INJETAFLOW_ADMIN_PASSWORD; se ausente, é gerada e mostrada apenas
- *   no console local, uma única vez. Nunca é gravada em arquivo.
+ * - Senha: INJETAFLOW_ADMIN_PASSWORD; se ausente, é gerada e gravada (B-11) em `opts.arquivoSenha`
+ *   (o servidor usa <pasta de dados>/senha-inicial.txt, permissão 0600). O log mostra só o caminho,
+ *   nunca a senha.
  * - Marcações de ponto de demonstração (P7-07): origem "Demonstração", nunca em produção por padrão
  *   (ver `deveSemearPontoDemo`).
- * - Demonstração: INJETAFLOW_SEED_DEMO=false desliga. Junto com os dados de exemplo são criados
- *   usuários demo (DEMO_USERS) com a senha INJETAFLOW_DEMO_PASSWORD ou uma senha gerada e
- *   mostrada só no console.
+ * - Demonstração (B-10): só com INJETAFLOW_SEED_DEMO=1 ou em desenvolvimento (ver `deveSemearDemo`).
+ *   Junto com os dados de exemplo são criados usuários demo (DEMO_USERS) com a senha
+ *   INJETAFLOW_DEMO_PASSWORD ou uma senha gerada, gravada no mesmo arquivo 0600.
  */
-export async function ensureSeed(repo: DataRepository, opts: { empresaId?: string; log?: (message: string) => void; env?: NodeJS.ProcessEnv } = {}): Promise<SeedResult> {
+export async function ensureSeed(repo: DataRepository, opts: { empresaId?: string; log?: (message: string) => void; env?: NodeJS.ProcessEnv; arquivoSenha?: string } = {}): Promise<SeedResult> {
   const env = opts.env ?? process.env;
   const empresaId = opts.empresaId ?? DEFAULT_EMPRESA_ID;
   const log = opts.log ?? (message => console.log(message));
   const result: SeedResult = { adminCreated: false, demoSeeded: false };
+  const credenciais: string[] = [];
+  const ondeEstaASenha = () =>
+    opts.arquivoSenha
+      ? `gravada no arquivo ${opts.arquivoSenha} (permissão 0600; não vai para o log)`
+      : "não exibida (defina INJETAFLOW_ADMIN_PASSWORD ou redefina com pnpm erp:reset-senha)";
 
   // migração automática do store: usuários antigos sem nome de usuário recebem um (admin inicial → "admin")
   const adminUsername = (env.INJETAFLOW_ADMIN_USERNAME || "admin").trim().toLowerCase();
@@ -66,12 +105,14 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
     result.adminEmail = email;
     if (!fromEnv) {
       result.generatedPassword = senha;
+      credenciais.push(`Administrador: usuário "${adminUsername}" (ou e-mail ${email}, ou matrícula ADM-0001)`, `Senha: ${senha}`);
       log(
         [
           "",
           "==================== InjetaFlow: administrador inicial ====================",
           `  Usuário: ${adminUsername}   (ou e-mail ${email}, ou matrícula ADM-0001)`,
-          `  Senha gerada (mostrada só agora, troque em Meu perfil): ${senha}`,
+          `  Senha gerada: ${ondeEstaASenha()}`,
+          "  Troque a senha no 1º acesso (Meu perfil) e apague o arquivo.",
           "  Para definir a senha você mesmo, use INJETAFLOW_ADMIN_PASSWORD antes do 1º start.",
           "===========================================================================",
           "",
@@ -82,7 +123,7 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
     }
   }
 
-  if (env.INJETAFLOW_SEED_DEMO !== "false") {
+  if (deveSemearDemo(env)) {
     const { total: ordens } = await repo.list("ordens", empresaId, { includeDeleted: true, limit: 1 });
     const { total: moldes } = await repo.list("moldes", empresaId, { includeDeleted: true, limit: 1 });
     if (ordens === 0 && moldes === 0) {
@@ -98,13 +139,16 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
           await createUser(repo, null, empresaId, { ...u, senha: demoSenha, permissoes: PERFIL_PRESETS[u.perfil], status: "Ativo" }, { autor: AUTOR_INICIALIZACAO });
         }
         result.demoUsers = DEMO_USERS.map(u => u.email);
-        if (!fromEnvDemo) result.generatedDemoPassword = demoSenha;
+        if (!fromEnvDemo) {
+          result.generatedDemoPassword = demoSenha;
+          credenciais.push("", `Usuários de DEMONSTRAÇÃO (${DEMO_USERS.map(u => u.email.split("@")[0]).join(", ")})`, `Senha: ${demoSenha}`);
+        }
         log(
           [
             "",
             "------------- InjetaFlow: usuários de DEMONSTRAÇÃO (um por perfil) -------------",
             ...DEMO_USERS.map(u => `  ${u.perfil.padEnd(10)} ${u.email}  (usuário ${u.email.split("@")[0]})`),
-            fromEnvDemo ? "  Senha: a definida em INJETAFLOW_DEMO_PASSWORD." : `  Senha (mostrada só agora): ${demoSenha}`,
+            fromEnvDemo ? "  Senha: a definida em INJETAFLOW_DEMO_PASSWORD." : `  Senha: ${ondeEstaASenha()}`,
             "--------------------------------------------------------------------------------",
             "",
           ].join("\n")
@@ -113,6 +157,10 @@ export async function ensureSeed(repo: DataRepository, opts: { empresaId?: strin
       result.demoSeeded = true;
       log("[InjetaFlow] Dados de DEMONSTRAÇÃO carregados (marcados como demo). Use INJETAFLOW_SEED_DEMO=false para não carregar.");
     }
+  }
+  if (credenciais.length && opts.arquivoSenha) {
+    gravarArquivoSenha(opts.arquivoSenha, credenciais);
+    result.arquivoSenha = opts.arquivoSenha;
   }
   return result;
 }
